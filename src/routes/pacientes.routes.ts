@@ -1,10 +1,22 @@
-﻿import { Router } from 'express';
+import { Router } from 'express';
 import { authenticate } from '../middlewares/auth';
+import * as pacientesController from '../controllers/pacientes.controller';
 
 const router = Router();
 
-router.get('/', authenticate, (req, res) => {
-  res.json({ message: 'Ruta en construcción' });
-});
+// Todas las rutas de pacientes requieren autenticación
+router.use(authenticate);
+
+/**
+ * @route GET /api/v1/pacientes
+ * @desc Obtener lista de pacientes (filtros vía query params: estado)
+ */
+router.get('/', pacientesController.getPacientes);
+
+/**
+ * @route GET /api/v1/pacientes/:id
+ * @desc Obtener detalle completo de un paciente
+ */
+router.get('/:id', pacientesController.getPacienteById);
 
 export default router;

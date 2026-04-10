@@ -7,6 +7,7 @@ import {
   // Gestión de Camas y Solicitudes
   getCamas, getSolicitudes, getSolicitudByFolio, createSolicitud, updateEstadoSolicitud, asignarCama
 } from '../controllers/admisiones.controller';
+import { crearValoracionMedica, getValoracionMedicaByPaciente } from '../controllers/valoracionMedica.controller';
 
 const router = Router();
 
@@ -32,6 +33,10 @@ router.get('/primer-contacto/:id', getPrimerContactoById);
 router.post('/valoracion', createValoracionDiagnostica);
 router.get('/valoracion', getValoraciones);
 router.get('/valoracion/:id', getValoracionById);
+
+// Valoración Médica (Historia Clínica)
+router.post('/valoracion-medica', crearValoracionMedica);
+router.get('/valoracion-medica/paciente/:pacienteId', getValoracionMedicaByPaciente);
 
 // Ingreso Wizard
 router.post('/ingreso', createIngreso);

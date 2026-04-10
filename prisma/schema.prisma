@@ -160,6 +160,7 @@ model Paciente {
   inventarioPertenencias InventarioPertenencias?
   documentos             Documento[]
   expedienteFisico       DocumentoExpediente[]
+  valoracionMedica       ValoracionMedica?
 
   // Cama (1 to 1)
   cama Cama?
@@ -268,6 +269,27 @@ model ValoracionDiagnostica {
   documentos Documento[]
 
   @@map("valoraciones_diagnosticas")
+}
+
+model ValoracionMedica {
+  id                  Int      @id @default(autoincrement())
+  pacienteId          Int      @unique
+  paciente            Paciente @relation(fields: [pacienteId], references: [id])
+  
+  padecimientoActual  String?  @db.Text
+  antecedentes        Json?    // Heredofamiliares, Personales Patológicos, Psiquiátricos
+  signosVitales       Json?    // TA, FC, FR, TEMP, PESO, TALLA
+  exploracionFisica   String?  @db.Text
+  examenMental        Json?    // Aspecto, Psicomotricidad, Afectividad, Ideación
+  diagnosticoCIE10    String?
+  pronostico          String?  @db.Text
+  tratamientoSugerido String?  @db.Text
+  esAptoParaIngreso   Boolean  @default(false)
+  
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("valoraciones_medicas")
 }
 
 enum EstadoIngreso {
