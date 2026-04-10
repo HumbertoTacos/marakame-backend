@@ -76,6 +76,17 @@ enum EstadoPaciente {
   CANALIZADO // No apto, enviado a otro servicio
 }
 
+enum TipoAdiccion {
+  ALCOHOL
+  COCAINA
+  METANFETAMINA
+  MARIHUANA
+  HEROINA
+  BENZODIACEPINAS
+  MULTIPLE
+  OTRO
+}
+
 model Paciente {
   id              Int            @id @default(autoincrement())
   // Datos básicos
@@ -84,6 +95,7 @@ model Paciente {
   apellidoMaterno String
   fechaNacimiento DateTime
   sexo            String // M / F
+  curp            String?        @unique // Agregado para validación única
   estadoCivil     String?
   hijos           Int?
   escolaridad     String?
@@ -95,6 +107,15 @@ model Paciente {
   direccion       String?
   // Estado
   estado          EstadoPaciente @default(PROSPECTO)
+  // Datos Médicos / Ingreso
+  tipoAdiccion    TipoAdiccion?  @default(ALCOHOL)
+  tiempoConsumo   String?
+  ultimoConsumo   DateTime?
+  motivoIngreso   String?        @db.Text
+  antecedentesMedicos String?    @db.Text
+  tratamientosPrevios Boolean    @default(false)
+  detallesTratamientos String?   @db.Text
+  areaDeseada         AreaCentro?
   // Sustancias (del primer contacto)
   sustancias      String[]
   // Timestamps
@@ -107,6 +128,7 @@ model Paciente {
   primerContacto         PrimerContacto[]
   valoraciones           ValoracionDiagnostica[]
   ingresos               Ingreso[]
+  solicitudes            SolicitudIngreso[]
   expediente             Expediente?
   estudioSocioeconomico  EstudioSocioeconomico?
   inventarioPertenencias InventarioPertenencias?
@@ -124,15 +146,21 @@ model Paciente {
 }
 
 model FamiliarResponsable {
-  id         Int      @id @default(autoincrement())
-  pacienteId Int      @unique
-  nombre     String
-  parentesco String
-  telefono   String?
-  celular    String?
-  direccion  String?
-  ocupacion  String?
-  paciente   Paciente @relation(fields: [pacienteId], references: [id])
+  id          Int      @id @default(autoincrement())
+  pacienteId  Int      @unique
+  nombre      String
+  parentesco  String
+  telefono    String?
+  telefonoAlt String?
+  celular     String?
+  correo      String?
+  direccion   String?
+  municipio   String?
+  estado      String?
+  ocupacion   String?
+
+  paciente    Paciente @relation(fields: [pacienteId], references: [id])
+  solicitudes SolicitudIngreso[]
 
   @@map("familiares_responsables")
 }
@@ -252,6 +280,66 @@ model Ingreso {
   usuario  Usuario  @relation(fields: [usuarioId], references: [id])
 
   @@map("ingresos")
+}
+
+// ============================================================
+// NUEVO FLUJO DE SOLICITUDES DE INGRESO
+// ============================================================
+
+enum NivelUrgencia {
+  BAJA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+enum EstadoSolicitud {
+  PENDIENTE
+  EN_PROCESO
+  APROBADA
+  RECHAZADA
+  EN_ESPERA
+}
+
+model SolicitudIngreso {
+  id              Int             @id @default(autoincrement())
+  folio           String          @unique // Generado ADM-YYYY-NNN
+  estado          EstadoSolicitud @default(PENDIENTE)
+  urgencia        NivelUrgencia   @default(BAJA)
+  observaciones   String?         @db.Text
+  motivoRechazo   String?         @db.Text
+
+  // Relaciones
+  solicitante     FamiliarResponsable @relation(fields: [solicitanteId], references: [id])
+  solicitanteId   Int
+  paciente        Paciente            @relation(fields: [pacienteId], references: [id])
+  pacienteId      Int
+  creadoPorId     Int                 // ID del usuario (staff) que registró la solicitud
+
+  asignacionCama  AsignacionCama?
+
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@map("solicitudes_ingreso")
+}
+
+model AsignacionCama {
+  id                   Int      @id @default(autoincrement())
+  fechaIngresoEstimada DateTime
+  observaciones        String?  @db.Text
+  medicoResponsableId  Int
+  medicoResponsableNom String
+
+  // Relaciones
+  solicitud            SolicitudIngreso @relation(fields: [solicitudId], references: [id])
+  solicitudId          Int              @unique
+  cama                 Cama             @relation(fields: [camaId], references: [id])
+  camaId               Int
+
+  createdAt            DateTime         @default(now())
+
+  @@map("asignaciones_cama")
 }
 
 // ============================================================
@@ -549,17 +637,20 @@ enum EstadoCama {
   DISPONIBLE
   OCUPADA
   MANTENIMIENTO
+  RESERVADA
 }
 
 model Cama {
   id          Int        @id @default(autoincrement())
-  numero      String     @unique
+  codigo      String?    @unique // Ej: "H-01", "M-05" (Opcional para compatibilidad)
+  numero      String     @unique // Mantenemos numero para compatibilidad
   area        AreaCentro
   estado      EstadoCama @default(DISPONIBLE)
   descripcion String?
   pacienteId  Int?       @unique
 
-  paciente Paciente? @relation(fields: [pacienteId], references: [id])
+  paciente     Paciente?        @relation(fields: [pacienteId], references: [id])
+  asignaciones AsignacionCama[]
 
   @@map("camas")
 }

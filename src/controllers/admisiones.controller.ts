@@ -230,60 +230,211 @@ export const getIngresoById = async (req: Request, res: Response) => {
 };
 
 // ============================================================
-// ESTUDIO SOCIOECONÓMICO (16 Secciones)
+// GESTIÓN DE CAMAS
 // ============================================================
 
-export const createEstudioSocioeconomico = async (req: Request, res: Response) => {
-  const { pacienteId, datos, nivelSocioeconomico, puntajeCalculado } = req.body;
+export const getCamas = async (req: Request, res: Response) => {
+  const { area } = req.query;
+  const filter: any = {};
+  if (area) filter.area = area as string;
 
-  const estudio = await prisma.estudioSocioeconomico.create({
-    data: {
-      pacienteId: parseInt(pacienteId as string, 10),
-      datos: datos || {},
-      seccionActual: 1,
-      nivelSocioeconomico,
-      puntajeCalculado,
-      completado: false
-    }
+  const camas = await prisma.cama.findMany({
+    where: filter,
+    include: {
+      paciente: {
+        select: {
+          id: true,
+          nombre: true,
+          apellidoPaterno: true,
+          apellidoMaterno: true
+        }
+      }
+    },
+    orderBy: { numero: 'asc' }
   });
-
-  res.status(201).json({ success: true, data: estudio });
+  res.json({ success: true, data: camas });
 };
 
-export const updateEstudioSocioeconomico = async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { datos, seccionActual, completado, nivelSocioeconomico, puntajeCalculado } = req.body;
+// ============================================================
+// GESTIÓN DE SOLICITUDES DE INGRESO
+// ============================================================
 
-  const estudio = await prisma.estudioSocioeconomico.update({
-    where: { id: parseInt(id as string, 10) },
-    data: {
-      datos,
-      seccionActual,
-      completado,
-      nivelSocioeconomico,
-      puntajeCalculado
-    }
-  });
-
-  res.json({ success: true, data: estudio });
-};
-
-export const getEstudiosSocioeconomicos = async (req: Request, res: Response) => {
-  const estudios = await prisma.estudioSocioeconomico.findMany({
-    include: { paciente: true },
+export const getSolicitudes = async (req: Request, res: Response) => {
+  const solicitudes = await prisma.solicitudIngreso.findMany({
+    include: {
+      paciente: true,
+      solicitante: true,
+      asignacionCama: true
+    },
     orderBy: { createdAt: 'desc' }
   });
-  res.json({ success: true, data: estudios });
+  res.json({ success: true, data: solicitudes });
 };
 
-export const getEstudioByPacienteId = async (req: Request, res: Response) => {
-  const { pacienteId } = req.params;
-  const estudio = await prisma.estudioSocioeconomico.findUnique({
-    where: { pacienteId: parseInt(pacienteId as string, 10) },
-    include: { paciente: true }
+export const getSolicitudByFolio = async (req: Request, res: Response) => {
+  const { folio } = req.params;
+  const solicitud = await prisma.solicitudIngreso.findUnique({
+    where: { folio: folio as string },
+    include: {
+      paciente: true,
+      solicitante: true,
+      asignacionCama: {
+        include: { cama: true }
+      }
+    }
   });
 
-  if (!estudio) throw new AppError(404, 'Estudio socioeconómico no encontrado para este paciente');
+  if (!solicitud) throw new AppError(404, 'Solicitud no encontrada');
+  res.json({ success: true, data: solicitud });
+};
 
-  res.json({ success: true, data: estudio });
+export const createSolicitud = async (req: Request, res: Response) => {
+  const data = req.body;
+  const usuarioId = req.usuario!.id;
+
+  // 1. Generar Folio ADM-YYYY-NNN
+  const currentYear = new Date().getFullYear();
+  const count = await prisma.solicitudIngreso.count({
+    where: {
+      folio: { startsWith: `ADM-${currentYear}` }
+    }
+  });
+  const folio = `ADM-${currentYear}-${String(count + 1).padStart(3, '0')}`;
+
+  const result = await prisma.$transaction(async (tx) => {
+    // 2. Buscar o crear paciente
+    let paciente;
+    if (data.pacienteId) {
+      paciente = await tx.paciente.update({
+        where: { id: parseInt(data.pacienteId as string, 10) },
+        data: {
+          curp: data.curp,
+          tipoAdiccion: data.tipoAdiccion,
+          motivoIngreso: data.motivoIngreso,
+          areaDeseada: data.areaDeseada
+        }
+      });
+    } else {
+      paciente = await tx.paciente.create({
+        data: {
+          nombre: data.nombre,
+          apellidoPaterno: data.apellidoPaterno,
+          apellidoMaterno: data.apellidoMaterno,
+          fechaNacimiento: new Date(data.fechaNacimiento),
+          sexo: data.sexo,
+          curp: data.curp,
+          tipoAdiccion: data.tipoAdiccion,
+          motivoIngreso: data.motivoIngreso,
+          areaDeseada: data.areaDeseada
+        }
+      });
+    }
+
+    // 3. Buscar o crear Familiar (Solicitante)
+    let familiar = await tx.familiarResponsable.findUnique({
+      where: { pacienteId: paciente.id }
+    });
+
+    if (familiar) {
+      familiar = await tx.familiarResponsable.update({
+        where: { id: familiar.id },
+        data: {
+          nombre: data.solicitanteNombre,
+          parentesco: data.solicitanteParentesco,
+          telefono: data.solicitanteTelefono,
+          correo: data.solicitanteCorreo,
+          municipio: data.solicitanteMunicipio,
+          estado: data.solicitanteEstado
+        }
+      });
+    } else {
+      familiar = await tx.familiarResponsable.create({
+        data: {
+          pacienteId: paciente.id,
+          nombre: data.solicitanteNombre,
+          parentesco: data.solicitanteParentesco,
+          telefono: data.solicitanteTelefono,
+          correo: data.solicitanteCorreo,
+          municipio: data.solicitanteMunicipio,
+          estado: data.solicitanteEstado
+        }
+      });
+    }
+
+    // 4. Crear Solicitud
+    return tx.solicitudIngreso.create({
+      data: {
+        folio,
+        pacienteId: paciente.id,
+        solicitanteId: familiar.id,
+        creadoPorId: usuarioId,
+        urgencia: data.urgencia || 'BAJA',
+        observaciones: data.observaciones
+      }
+    });
+  });
+
+  res.status(201).json({ success: true, data: result });
+};
+
+export const updateEstadoSolicitud = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { estado, motivoRechazo } = req.body;
+
+  const solicitud = await prisma.solicitudIngreso.update({
+    where: { id: parseInt(id as string, 10) },
+    data: { estado, motivoRechazo }
+  });
+
+  res.json({ success: true, data: solicitud });
+};
+
+export const asignarCama = async (req: Request, res: Response) => {
+  const { id } = req.params; // solicitudId
+  const { camaId, fechaIngresoEstimada, observaciones, medicoId, medicoNombre } = req.body;
+
+  const result = await prisma.$transaction(async (tx) => {
+    // 1. Obtener solicitud
+    const solicitud = await tx.solicitudIngreso.findUnique({
+      where: { id: parseInt(id as string, 10) }
+    });
+    if (!solicitud) throw new Error('Solicitud no encontrada');
+
+    // 2. Crear Asignación
+    const asignacion = await tx.asignacionCama.create({
+      data: {
+        solicitudId: solicitud.id,
+        camaId: parseInt(camaId as string, 10),
+        fechaIngresoEstimada: new Date(fechaIngresoEstimada),
+        observaciones,
+        medicoResponsableId: parseInt(medicoId as string, 10),
+        medicoResponsableNom: medicoNombre
+      }
+    });
+
+    // 3. Actualizar Solicitud
+    await tx.solicitudIngreso.update({
+      where: { id: solicitud.id },
+      data: { estado: 'APROBADA' }
+    });
+
+    // 4. Actualizar Cama
+    await tx.cama.update({
+      where: { id: parseInt(camaId as string, 10) },
+      data: {
+        estado: 'OCUPADA',
+        pacienteId: solicitud.pacienteId
+      }
+    });
+
+    // 5. Actualizar Paciente
+    await tx.paciente.update({
+      where: { id: solicitud.pacienteId },
+      data: { estado: 'INTERNADO' }
+    });
+
+    return asignacion;
+  });
+
+  res.json({ success: true, data: result });
 };
