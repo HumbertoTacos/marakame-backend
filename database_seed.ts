@@ -33,15 +33,29 @@ async function main() {
   const admisionista = await prisma.usuario.findUnique({ where: { correo: 'admisiones@marakame.com' } });
 
   // 2. CATÁLOGO DE CAMAS
-  console.log('🛏️ Inicializando catálogo de camas...');
+  console.log('🛏️ Inicializando catálogo de habitaciones y camas...');
   const areas = ['HOMBRES', 'MUJERES', 'DETOX'];
   for (const area of areas) {
+    const habitacion = await (prisma.habitacion as any).upsert({
+      where: { nombre: `Habitación ${area}` },
+      update: { area: area as any },
+      create: { 
+        nombre: `Habitación ${area}`, 
+        capacidadMax: 10, 
+        area: area as any 
+      },
+    });
+
     for (let i = 1; i <= 5; i++) {
       const numero = `${area.charAt(0)}-${i.toString().padStart(2, '0')}`;
       await (prisma.cama as any).upsert({
         where: { numero },
-        update: { area },
-        create: { numero, area, estado: 'DISPONIBLE' },
+        update: { habitacionId: habitacion.id },
+        create: { 
+          numero, 
+          habitacionId: habitacion.id, 
+          estado: 'DISPONIBLE' 
+        },
       });
     }
   }
@@ -69,11 +83,8 @@ async function main() {
   console.log('🏥 Registrando pacientes y expedientes clínicos...');
   
   // PACIENTE 1: INTERNADO
-  const pInternado = await prisma.paciente.upsert({
-    where: { id: 1 },
-    update: { estado: 'INTERNADO' },
-    create: {
-      id: 1,
+  const pInternado = await (prisma.paciente as any).create({
+    data: {
       nombre: 'Carlos',
       apellidoPaterno: 'Jiménez',
       apellidoMaterno: 'Sosa',
@@ -128,11 +139,8 @@ async function main() {
   });
 
   // PACIENTE 2: PROSPECTO (Solo primer contacto)
-  const pProspecto = await prisma.paciente.upsert({
-    where: { id: 2 },
-    update: { estado: 'PROSPECTO' },
-    create: {
-      id: 2,
+  const pProspecto = await (prisma.paciente as any).create({
+    data: {
       nombre: 'María',
       apellidoPaterno: 'Rodríguez',
       apellidoMaterno: 'Pena',
@@ -185,7 +193,33 @@ async function main() {
       especialistaId: medico!.id,
       fechaHora: new Date(new Date().getTime() + 24 * 60 * 60 * 1000), // Mañana
       motivo: 'Revisión médica semanal',
-      estado: 'PROGRAMADA',
+    },
+  });
+  
+  // PACIENTE 3: EGRESADO + REFORZAMIENTO
+  console.log('🎓 Registrando paciente egresado y programa de reforzamiento...');
+  const pEgresado = await (prisma.paciente as any).create({
+    data: {
+      nombre: 'Elena',
+      apellidoPaterno: 'Luna',
+      apellidoMaterno: 'Mora',
+      fechaNacimiento: new Date('1988-03-12'),
+      sexo: 'F',
+      estado: 'EGRESADO',
+      sustancias: ['Crystal'],
+      direccion: 'Col. San Juan, Tepic',
+    },
+  });
+
+  await (prisma as any).programaReforzamiento.upsert({
+    where: { pacienteId: pEgresado.id },
+    update: {},
+    create: {
+      pacienteId: pEgresado.id,
+      fechaInicio: new Date(),
+      fechaFinEstimada: new Date(new Date().getTime() + 365 * 24 * 60 * 60 * 1000), // 1 año después
+      estado: 'ACTIVO',
+      observaciones: 'Paciente inicia programa de seguimiento de un año tras egreso exitoso.',
     },
   });
 

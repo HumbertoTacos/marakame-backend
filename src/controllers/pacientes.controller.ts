@@ -68,7 +68,8 @@ export const getAprobadosParaIngreso = async (_req: Request, res: Response) => {
         orderBy: { createdAt: 'desc' },
         take: 1
       },
-      familiar: true
+      familiar: true,
+      valoracionMedica: true
     },
     orderBy: { updatedAt: 'desc' }
   });

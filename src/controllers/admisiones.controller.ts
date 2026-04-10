@@ -37,28 +37,35 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
           }
         });
       } else {
-        // Crear nuevo paciente (Si el CURP existe es null, Postgres permite múltiples NULLs pero no múltiples "")
-        const paciente = await tx.paciente.create({
-          data: {
-            nombre: data.nombrePaciente,
-            apellidoPaterno: data.apellidoPaterno,
-            apellidoMaterno: data.apellidoMaterno,
-            fechaNacimiento: new Date(data.fechaNacimiento),
-            sexo: data.sexo,
-            curp: normalizedCurp, // Usar el CURP normalizado
-            estadoCivil: data.estadoCivil,
-            hijos: parseInt(data.hijos || '0', 10),
-            escolaridad: data.escolaridad,
-            lugarOrigen: data.lugarOrigen,
-            ocupacion: data.ocupacion,
-            telefono: data.telefonoPaciente,
-            celular: data.celularPaciente,
-            direccion: data.direccionPaciente,
-            sustancias: data.sustancias || [],
-            estado: 'PROSPECTO'
+        try {
+          // Crear nuevo paciente (Si el CURP existe es null, Postgres permite múltiples NULLs pero no múltiples "")
+          const paciente = await tx.paciente.create({
+            data: {
+              nombre: data.nombrePaciente,
+              apellidoPaterno: data.apellidoPaterno,
+              apellidoMaterno: data.apellidoMaterno,
+              fechaNacimiento: new Date(data.fechaNacimiento),
+              sexo: data.sexo,
+              curp: normalizedCurp, // Usar el CURP normalizado
+              estadoCivil: data.estadoCivil,
+              hijos: parseInt(data.hijos || '0', 10),
+              escolaridad: data.escolaridad,
+              lugarOrigen: data.lugarOrigen,
+              ocupacion: data.ocupacion,
+              telefono: data.telefonoPaciente,
+              celular: data.celularPaciente,
+              direccion: data.direccionPaciente,
+              sustancias: data.sustancias || [],
+              estado: 'PROSPECTO'
+            }
+          });
+          pacienteIdToUse = paciente.id;
+        } catch (error: any) {
+          if (error.code === 'P2002') {
+            throw new AppError(400, 'El CURP ingresado ya está registrado en el sistema');
           }
-        });
-        pacienteIdToUse = paciente.id;
+          throw error;
+        }
       }
     }
 
@@ -353,32 +360,44 @@ export const createSolicitud = async (req: Request, res: Response) => {
   const folio = `ADM-${currentYear}-${String(count + 1).padStart(3, '0')}`;
 
   const result = await prisma.$transaction(async (tx) => {
+    // 1.1 Normalización de CURP (Replicando lógica de Primer Contacto)
+    const normalizedCurp = data.curp && data.curp.trim() !== '' 
+      ? data.curp.trim().toUpperCase() 
+      : null;
+
     // 2. Buscar o crear paciente
     let paciente;
     if (data.pacienteId) {
       paciente = await tx.paciente.update({
         where: { id: parseInt(data.pacienteId as string, 10) },
         data: {
-          curp: data.curp,
+          curp: normalizedCurp,
           tipoAdiccion: data.tipoAdiccion,
           motivoIngreso: data.motivoIngreso,
           areaDeseada: data.areaDeseada
         }
       });
     } else {
-      paciente = await tx.paciente.create({
-        data: {
-          nombre: data.nombre,
-          apellidoPaterno: data.apellidoPaterno,
-          apellidoMaterno: data.apellidoMaterno,
-          fechaNacimiento: new Date(data.fechaNacimiento),
-          sexo: data.sexo,
-          curp: data.curp,
-          tipoAdiccion: data.tipoAdiccion,
-          motivoIngreso: data.motivoIngreso,
-          areaDeseada: data.areaDeseada
+      try {
+        paciente = await tx.paciente.create({
+          data: {
+            nombre: data.nombre,
+            apellidoPaterno: data.apellidoPaterno,
+            apellidoMaterno: data.apellidoMaterno,
+            fechaNacimiento: new Date(data.fechaNacimiento),
+            sexo: data.sexo,
+            curp: normalizedCurp,
+            tipoAdiccion: data.tipoAdiccion,
+            motivoIngreso: data.motivoIngreso,
+            areaDeseada: data.areaDeseada
+          }
+        });
+      } catch (error: any) {
+        if (error.code === 'P2002') {
+          throw new AppError(400, 'El CURP ingresado ya está registrado en el sistema');
         }
-      });
+        throw error;
+      }
     }
 
     // 3. Buscar o crear Familiar (Solicitante)

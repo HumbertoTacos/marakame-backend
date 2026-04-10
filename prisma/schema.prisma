@@ -41,7 +41,6 @@ model Usuario {
   // Relaciones
   primerContacto     PrimerContacto[]
   valoraciones       ValoracionDiagnostica[]
-  ingresos           Ingreso[]
   bitacoraEntradas   BitacoraEntrada[]
   documentos         Documento[]
   almacenMovimientos AlmacenMovimiento[]
@@ -88,11 +87,6 @@ enum TipoAdiccion {
 }
 
 // Nuevos Enums para Expediente Físico e Ingreso
-enum TipoIngreso {
-  PRIMARIO
-  REFORZAMIENTO
-}
-
 enum UbicacionFisica {
   LADO_IZQ
   LADO_DER
@@ -135,10 +129,10 @@ model Paciente {
   detallesTratamientos String?   @db.Text
   areaDeseada         AreaCentro?
   // Sustancias (del primer contacto)
+  // Sustancias (del primer contacto)
   sustancias      String[]
   
   // Nuevos campos de Gestión de Ingreso
-  tipoIngreso          TipoIngreso?   @default(PRIMARIO)
   nivelTratamiento     Int            @default(1)
   fechaIngreso         DateTime?
   fechaEgresoPrevista  DateTime?
@@ -153,7 +147,6 @@ model Paciente {
   familiar               FamiliarResponsable?
   primerContacto         PrimerContacto[]
   valoraciones           ValoracionDiagnostica[]
-  ingresos               Ingreso[]
   solicitudes            SolicitudIngreso[]
   expediente             Expediente?
   estudioSocioeconomico  EstudioSocioeconomico?
@@ -161,6 +154,7 @@ model Paciente {
   documentos             Documento[]
   expedienteFisico       DocumentoExpediente[]
   valoracionMedica       ValoracionMedica?
+  programaReforzamiento  ProgramaReforzamiento?
 
   // Cama (1 to 1)
   cama Cama?
@@ -292,43 +286,30 @@ model ValoracionMedica {
   @@map("valoraciones_medicas")
 }
 
-enum EstadoIngreso {
-  BORRADOR
-  EN_PROCESO
+// ============================================================
+// PROGRAMA DE REFORZAMIENTO
+// ============================================================
+
+enum EstadoProgramaReforzamiento {
+  ACTIVO
+  ABANDONO
   COMPLETADO
-  CANCELADO
 }
 
-model Ingreso {
-  id                      Int           @id @default(autoincrement())
-  pacienteId              Int
-  usuarioId               Int
-  pasoActual              Int           @default(1) // 1-8
-  estado                  EstadoIngreso @default(BORRADOR)
-  // Paso 1 - Solicitud
-  motivoIngreso           String?
-  // Paso 2 - Cita
-  fechaCita               DateTime?
-  horaCita                String?
-  medicoAsignado          String?
-  // Paso 3 - Valoración médica
-  resultadoValoracion     String?
-  observacionesValoracion String?
-  // Paso 5 - Aptitud
-  esApto                  Boolean?
-  motivoNoApto            String?
-  // Paso 7 - Inventario de pertenencias (relación)
-  // Paso 8 - Asignación de habitación (Se mantiene para histórico pero el real es por la tabla Cama)
-  habitacionAsignada      String?
-  areaAsignada            String? // Mujeres / Hombres / Detox
-  fechaIngreso            DateTime?
-  createdAt               DateTime      @default(now())
-  updatedAt               DateTime      @updatedAt
+model ProgramaReforzamiento {
+  id                Int                         @id @default(autoincrement())
+  pacienteId        Int                         @unique
+  fechaInicio       DateTime
+  fechaFinEstimada  DateTime
+  estado            EstadoProgramaReforzamiento @default(ACTIVO)
+  observaciones     String?                     @db.Text
+  
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
 
-  paciente Paciente @relation(fields: [pacienteId], references: [id])
-  usuario  Usuario  @relation(fields: [usuarioId], references: [id])
+  paciente          Paciente                    @relation(fields: [pacienteId], references: [id])
 
-  @@map("ingresos")
+  @@map("programas_reforzamiento")
 }
 
 // ============================================================
@@ -703,7 +684,7 @@ enum EstadoCama {
 
 model Habitacion {
   id           Int        @id @default(autoincrement())
-  nombre       String     // A, B, C, D
+  nombre       String     @unique // A, B, C, D
   capacidadMax Int        @default(4)
   area         AreaCentro
   camas        Cama[]
