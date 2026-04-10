@@ -8,7 +8,7 @@ import { EstadoPaciente } from '@prisma/client';
  * GET /api/v1/pacientes?estado=PROSPECTO
  */
 export const getPacientes = async (req: Request, res: Response) => {
-  const { estado } = req.query;
+  const { estado, sinValorar } = req.query;
 
   const where: any = {
     deletedAt: null
@@ -20,6 +20,11 @@ export const getPacientes = async (req: Request, res: Response) => {
       throw new AppError(400, 'Estado de paciente no válido');
     }
     where.estado = estado;
+  }
+
+  // Filtro específico para Area Médica (Solo los que no tienen valoración registrada)
+  if (sinValorar === 'true') {
+    where.valoracionMedica = { is: null };
   }
 
   const pacientes = await prisma.paciente.findMany({
@@ -34,9 +39,38 @@ export const getPacientes = async (req: Request, res: Response) => {
           habitacion: true
         }
       },
-      expediente: true
+      expediente: true,
+      valoracionMedica: true
     },
     orderBy: { createdAt: 'desc' }
+  });
+
+  res.json({
+    success: true,
+    data: pacientes
+  });
+};
+
+/**
+ * Obtener pacientes que ya fueron aprobados por el médico (PENDIENTE_INGRESO)
+ * GET /api/v1/pacientes/aprobados-para-ingreso
+ */
+export const getAprobadosParaIngreso = async (_req: Request, res: Response) => {
+  const pacientes = await prisma.paciente.findMany({
+    where: {
+      estado: 'PENDIENTE_INGRESO',
+      valoracionMedica: {
+        esAptoParaIngreso: true
+      }
+    },
+    include: {
+      primerContacto: {
+        orderBy: { createdAt: 'desc' },
+        take: 1
+      },
+      familiar: true
+    },
+    orderBy: { updatedAt: 'desc' }
   });
 
   res.json({

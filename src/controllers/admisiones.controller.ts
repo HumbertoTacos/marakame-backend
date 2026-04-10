@@ -389,16 +389,90 @@ export const createSolicitud = async (req: Request, res: Response) => {
     }
 
     // 4. Crear Solicitud
-    return tx.solicitudIngreso.create({
+    const solicitud = await tx.solicitudIngreso.create({
       data: {
         folio,
         pacienteId: paciente.id,
         solicitanteId: familiar.id,
         creadoPorId: usuarioId,
         urgencia: data.urgencia || 'BAJA',
-        observaciones: data.observaciones
+        observaciones: data.observaciones,
+        // Si ya viene con cama, la solicitud se aprueba automáticamente
+        estado: data.camaId ? 'APROBADA' : 'PENDIENTE'
       }
     });
+
+    // 5. FLUJO EXTRA: Internamiento Formal Inmediato (Si se seleccionó cama)
+    if (data.camaId) {
+      // 5.1 Asignación de Cama
+      await tx.asignacionCama.create({
+        data: {
+          solicitudId: solicitud.id,
+          camaId: parseInt(data.camaId as string, 10),
+          fechaIngresoEstimada: new Date(),
+          medicoResponsableId: usuarioId, // Por ahora el que lo interna
+          medicoResponsableNom: req.usuario?.nombre || 'Administración'
+        }
+      });
+
+      // 5.2 Ocupar Cama
+      await tx.cama.update({
+        where: { id: parseInt(data.camaId as string, 10) },
+        data: { 
+          estado: 'OCUPADA', 
+          pacienteId: paciente.id 
+        }
+      });
+
+      // 5.3 Formalizar Expediente y Clave Única
+      const claveUnica = await generarSiguienteClaveUnica(tx);
+      await tx.paciente.update({
+        where: { id: paciente.id },
+        data: { 
+          estado: 'INTERNADO',
+          claveUnica: claveUnica
+        }
+      });
+
+      // 5.4 Crear Expediente Clínico
+      await tx.expediente.upsert({
+        where: { pacienteId: paciente.id },
+        update: {},
+        create: { pacienteId: paciente.id }
+      });
+
+      // 5.5 Generar Checklist de 19 Documentos
+      const docsAdmin = [
+        'Carátula', 'Reglamento general', 'Inventario de pertenencias', 
+        'Hoja de división', 'Hoja de ingreso', 'Aviso de privacidad', 
+        'Políticas', 'Consentimiento', 'Condiciones', 'Formato de info', 
+        'Derechos', 'Reglamento familiar', 'Estudio socioeconómico', 
+        'Convenios', 'Recibos y Gastos'
+      ];
+      const docsEval = [
+        'Cuestionario ASSIST', 'Cuestionario de abuso de drogas', 
+        'Escala de dependencia al alcohol', 'Ludopatía'
+      ];
+
+      await tx.documentoExpediente.createMany({
+        data: [
+          ...docsAdmin.map(nombre => ({
+            nombre,
+            pacienteId: paciente.id,
+            ubicacion: 'LADO_IZQ' as any,
+            estado: 'PENDIENTE' as any
+          })),
+          ...docsEval.map(nombre => ({
+            nombre,
+            pacienteId: paciente.id,
+            ubicacion: 'EVALUACIONES' as any,
+            estado: 'PENDIENTE' as any
+          }))
+        ]
+      });
+    }
+
+    return solicitud;
   });
 
   res.status(201).json({ success: true, data: result });

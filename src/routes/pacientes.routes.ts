@@ -14,6 +14,12 @@ router.use(authenticate);
 router.get('/', pacientesController.getPacientes);
 
 /**
+ * @route GET /api/v1/pacientes/aprobados-para-ingreso
+ * @desc Obtener pacientes listos para internamiento formal
+ */
+router.get('/aprobados-para-ingreso', pacientesController.getAprobadosParaIngreso);
+
+/**
  * @route GET /api/v1/pacientes/:id
  * @desc Obtener detalle completo de un paciente
  */
