@@ -7,52 +7,65 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
   const data = req.body;
   const usuarioId = req.usuario!.id;
 
-  // Si envían data del paciente, creamos un registro paciente si no existe o usamos el id si lo hay
-  const pacienteId = data.pacienteId;
+  const result = await prisma.$transaction(async (tx) => {
+    // 1. Crear o Vincular Paciente (Estado PROSPECTO por defecto)
+    let pacienteIdToUse: number;
 
-  // Lógica de paciente (crear o vincular)
-  let pacienteIdToUse: number;
+    if (data.pacienteId) {
+      pacienteIdToUse = parseInt(data.pacienteId as string, 10);
+      // Opcionalmente actualizar datos si vienen en el form
+    } else {
+      const paciente = await tx.paciente.create({
+        data: {
+          nombre: data.nombrePaciente,
+          apellidoPaterno: data.apellidoPaterno,
+          apellidoMaterno: data.apellidoMaterno,
+          fechaNacimiento: new Date(data.fechaNacimiento),
+          sexo: data.sexo,
+          curp: data.curp,
+          estadoCivil: data.estadoCivil,
+          hijos: parseInt(data.hijos || '0', 10),
+          escolaridad: data.escolaridad,
+          lugarOrigen: data.lugarOrigen,
+          ocupacion: data.ocupacion,
+          telefono: data.telefonoPaciente,
+          celular: data.celularPaciente,
+          direccion: data.direccionPaciente,
+          sustancias: data.sustancias || [],
+          estado: 'PROSPECTO'
+        }
+      });
+      pacienteIdToUse = paciente.id;
+    }
 
-  if (pacienteId) {
-    pacienteIdToUse = parseInt(pacienteId as string, 10);
-  } else {
-    const paciente = await prisma.paciente.create({
+    // 2. Crear el registro de Primer Contacto
+    const primerContacto = await tx.primerContacto.create({
       data: {
-        nombre: data.nombrePaciente || 'Sin Nombre',
-        apellidoPaterno: data.apellidoPaterno || '',
-        apellidoMaterno: data.apellidoMaterno || '',
-        fechaNacimiento: data.fechaNacimiento ? new Date(data.fechaNacimiento) : new Date(),
-        sexo: data.sexo || 'M',
-        sustancias: data.sustancias || [],
+        pacienteId: pacienteIdToUse,
+        usuarioId: usuarioId,
+        dia: new Date().toLocaleDateString('es-MX', { weekday: 'long' }),
+        fuenteReferencia: data.fuenteReferencia,
+        solicitanteNombre: data.solicitanteNombre,
+        solicitanteTelefono: data.solicitanteTelefono,
+        solicitanteCelular: data.solicitanteCelular,
+        solicitanteDireccion: data.solicitanteDireccion,
+        solicitanteOcupacion: data.solicitanteOcupacion,
+        relacionPaciente: data.relacionPaciente,
+        dispuestoInternarse: data.dispuestoInternarse,
+        requiereIntervencion: data.requiereIntervencion === 'true' || data.requiereIntervencion === true,
+        estadoPrevioTratamiento: data.estadoPrevioTratamiento === 'true' || data.estadoPrevioTratamiento === true,
+        acuerdo: data.acuerdo,
+        observaciones: data.observaciones,
+        posibilidadesEconomicas: data.posibilidadesEconomicas,
+        medicoNombre: data.medicoNombre,
+        conclusionMedica: data.conclusionMedica,
       }
     });
-    pacienteIdToUse = paciente.id;
-  }
 
-  const primerContacto = await prisma.primerContacto.create({
-    data: {
-      pacienteId: pacienteIdToUse,
-      usuarioId: usuarioId,
-      dia: new Date().toLocaleDateString('es-ES', { weekday: 'long' }),
-      fuenteReferencia: data.fuenteReferencia || 'OTRO',
-      solicitanteNombre: data.solicitanteNombre,
-      solicitanteTelefono: data.solicitanteTelefono,
-      solicitanteCelular: data.solicitanteCelular,
-      solicitanteDireccion: data.solicitanteDireccion,
-      solicitanteOcupacion: data.solicitanteOcupacion,
-      relacionPaciente: data.relacionPaciente || 'FAMILIAR',
-      dispuestoInternarse: data.dispuestoInternarse || 'NO',
-      requiereIntervencion: data.requiereIntervencion || false,
-      estadoPrevioTratamiento: data.estadoPrevioTratamiento || false,
-      acuerdo: data.acuerdo,
-      observaciones: data.observaciones,
-      posibilidadesEconomicas: data.posibilidadesEconomicas,
-      medicoNombre: data.medicoNombre,
-      conclusionMedica: data.conclusionMedica,
-    }
+    return primerContacto;
   });
 
-  res.status(201).json({ success: true, data: primerContacto });
+  res.status(201).json({ success: true, data: result });
 };
 
 export const getPrimerContactos = async (req: Request, res: Response) => {
