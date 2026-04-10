@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 import { AppError } from '../middlewares/errorHandler';
+import { generarSiguienteClaveUnica, aplicarCapaPrivacidad } from '../utils/paciente.utils';
 
 export const createPrimerContacto = async (req: Request, res: Response) => {
   const data = req.body;
@@ -60,9 +61,10 @@ export const getPrimerContactos = async (req: Request, res: Response) => {
       paciente: true,
       usuario: { select: { nombre: true, apellidos: true } }
     },
-    orderBy: { fecha: 'desc' }
   });
-  res.json({ success: true, data: contactos });
+
+  const privacyData = aplicarCapaPrivacidad(contactos);
+  res.json({ success: true, data: privacyData });
 };
 
 export const getPrimerContactoById = async (req: Request, res: Response) => {
@@ -119,9 +121,10 @@ export const getValoraciones = async (req: Request, res: Response) => {
       paciente: true,
       usuario: { select: { nombre: true, apellidos: true } }
     },
-    orderBy: { fecha: 'desc' }
   });
-  res.json({ success: true, data: valoraciones });
+
+  const privacyData = aplicarCapaPrivacidad(valoraciones);
+  res.json({ success: true, data: privacyData });
 };
 
 export const getValoracionById = async (req: Request, res: Response) => {
@@ -209,9 +212,10 @@ export const getIngresos = async (req: Request, res: Response) => {
       paciente: true,
       usuario: { select: { nombre: true, apellidos: true } }
     },
-    orderBy: { createdAt: 'desc' }
   });
-  res.json({ success: true, data: ingresos });
+
+  const privacyData = aplicarCapaPrivacidad(ingresos);
+  res.json({ success: true, data: privacyData });
 };
 
 export const getIngresoById = async (req: Request, res: Response) => {
@@ -236,14 +240,21 @@ export const getIngresoById = async (req: Request, res: Response) => {
 export const getCamas = async (req: Request, res: Response) => {
   const { area } = req.query;
   const filter: any = {};
-  if (area) filter.area = area as string;
+  
+  if (area) {
+    filter.habitacion = {
+      area: area as string
+    };
+  }
 
   const camas = await prisma.cama.findMany({
     where: filter,
     include: {
+      habitacion: true,
       paciente: {
         select: {
           id: true,
+          claveUnica: true,
           nombre: true,
           apellidoPaterno: true,
           apellidoMaterno: true
@@ -252,7 +263,9 @@ export const getCamas = async (req: Request, res: Response) => {
     },
     orderBy: { numero: 'asc' }
   });
-  res.json({ success: true, data: camas });
+
+  const privacyData = aplicarCapaPrivacidad(camas);
+  res.json({ success: true, data: privacyData });
 };
 
 // ============================================================
@@ -266,9 +279,10 @@ export const getSolicitudes = async (req: Request, res: Response) => {
       solicitante: true,
       asignacionCama: true
     },
-    orderBy: { createdAt: 'desc' }
   });
-  res.json({ success: true, data: solicitudes });
+
+  const privacyData = aplicarCapaPrivacidad(solicitudes);
+  res.json({ success: true, data: privacyData });
 };
 
 export const getSolicitudByFolio = async (req: Request, res: Response) => {
@@ -427,10 +441,50 @@ export const asignarCama = async (req: Request, res: Response) => {
       }
     });
 
-    // 5. Actualizar Paciente
+    // 5. Actualizar Paciente y Generar Clave Única
+    const claveUnica = await generarSiguienteClaveUnica(tx);
     await tx.paciente.update({
       where: { id: solicitud.pacienteId },
-      data: { estado: 'INTERNADO' }
+      data: { 
+        estado: 'INTERNADO',
+        claveUnica: claveUnica
+      }
+    });
+
+    // 6. Generar Checklist Automático de Documentos (15 Documentos)
+    const documentosRequeridos = [
+      'Carátula', 'Reglamento general', 'Inventario de pertenencias', 
+      'Hoja de división', 'Hoja de ingreso', 'Aviso de privacidad', 
+      'Políticas', 'Consentimiento', 'Condiciones', 'Formato de info', 
+      'Derechos', 'Reglamento familiar', 'Estudio socioeconómico', 
+      'Convenios', 'Recibos y Gastos'
+    ];
+
+    await tx.documentoExpediente.createMany({
+      data: [
+        ...documentosRequeridos.map(nombre => ({
+          nombre,
+          pacienteId: solicitud.pacienteId,
+          ubicacion: 'LADO_IZQ' as const,
+          estado: 'PENDIENTE' as const
+        })),
+        ...['Cuestionario ASSIST', 'Cuestionario de abuso de drogas', 'Escala de dependencia al alcohol', 'Ludopatía'].map(nombre => ({
+          nombre,
+          pacienteId: solicitud.pacienteId,
+          ubicacion: 'EVALUACIONES' as const,
+          estado: 'PENDIENTE' as const
+        }))
+      ]
+    });
+
+    // 7. Asegurar Expediente Clínico (Relación 1 a 1 con Paciente)
+    // Usamos upsert para evitar errores si el paciente ya tiene un expediente (re-ingresos)
+    await tx.expediente.upsert({
+      where: { pacienteId: solicitud.pacienteId },
+      update: {}, // No sobreescribimos datos clínicos viejos aquí por ahora
+      create: { 
+        pacienteId: solicitud.pacienteId 
+      }
     });
 
     return asignacion;

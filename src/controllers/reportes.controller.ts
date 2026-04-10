@@ -127,3 +127,67 @@ export const exportarAlmacenExcel = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: 'Hubo un problema generando el archivo EXCEL' });
   }
 };
+
+// ============================================================
+// GENERACIÓN DE DOCUMENTOS PARA FIRMA (STUBS)
+// ============================================================
+
+export const generarDocumentoFirmaPDF = async (req: Request, res: Response) => {
+  const { docId } = req.params;
+
+  try {
+    // 1. Obtener datos del documento y paciente
+    const docExp = await prisma.documentoExpediente.findUnique({
+      where: { id: parseInt(docId, 10) },
+      include: { paciente: true }
+    });
+
+    if (!docExp) {
+      return res.status(404).json({ success: false, error: 'Documento no encontrado' });
+    }
+
+    const { paciente } = docExp;
+    const doc = new PDFDocument({ margin: 50 });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${docExp.nombre.replace(/ /g, '_')}.pdf"`);
+
+    doc.pipe(res);
+
+    // Cabecera Institucional
+    doc.fontSize(22).text('INSTITUTO MARAKAME', { align: 'center' });
+    doc.fontSize(10).text('Centro de Rehabilitación y Readaptación Social', { align: 'center' });
+    doc.moveDown(2);
+
+    // Título del Documento
+    doc.fontSize(16).font('Helvetica-Bold').text(docExp.nombre.toUpperCase(), { align: 'center' });
+    doc.moveDown(1.5);
+
+    // Datos del Paciente
+    doc.fontSize(12).font('Helvetica');
+    doc.text(`CLAVE ÚNICA DE EXPEDIENTE: ${paciente.claveUnica || 'PENDIENTE'}`);
+    doc.text(`FECHA DE EMISIÓN: ${new Date().toLocaleDateString('es-MX')}`);
+    doc.moveDown(2);
+
+    // Cuerpo del Stub
+    doc.fontSize(11).text('Por medio del presente documento, se hace constar el registro administrativo del paciente en las instalaciones del Instituto Marakame.', { align: 'justify' });
+    doc.moveDown();
+    doc.text('Este es un documento generado automáticamente por el sistema de gestión de expedientes digitales. El contenido íntegro y los términos legales específicos se encuentran detallados en el manual de procedimientos administrativos de la institución.', { align: 'justify' });
+    
+    doc.moveDown(5);
+
+    // Líneas de Firma
+    const lineTop = doc.y;
+    doc.moveTo(100, lineTop).lineTo(250, lineTop).stroke();
+    doc.moveTo(350, lineTop).lineTo(500, lineTop).stroke();
+    
+    doc.fontSize(10);
+    doc.text('FIRMA DEL PACIENTE O RESPONSABLE', 100, lineTop + 10, { width: 150, align: 'center' });
+    doc.text('FIRMA ADMISIONES / AUTORIDAD', 350, lineTop + 10, { width: 150, align: 'center' });
+
+    doc.end();
+  } catch (error) {
+    console.error('Error generando PDF de firma:', error);
+    res.status(500).json({ success: false, error: 'Error al generar el documento' });
+  }
+};

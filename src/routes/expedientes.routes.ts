@@ -101,4 +101,27 @@ router.post('/:id/notas', async (req: Request, res: Response) => {
   res.status(201).json({ success: true, data: nuevaNota });
 });
 
+// 3. Obtener Checklist de Documentos del Expediente Físico
+router.get('/paciente/:pacienteId/documentos-expediente', async (req: Request, res: Response) => {
+  const { pacienteId } = req.params;
+  const documentos = await prisma.documentoExpediente.findMany({
+    where: { pacienteId: parseInt(pacienteId as string, 10) },
+    orderBy: { id: 'asc' }
+  });
+  res.json({ success: true, data: documentos });
+});
+
+// 4. Actualizar Estado de Documento (PENDIENTE/ENTREGADO)
+router.patch('/documentos-expediente/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { estado } = req.body;
+  
+  const documento = await prisma.documentoExpediente.update({
+    where: { id: parseInt(id as string, 10) },
+    data: { estado }
+  });
+  
+  res.json({ success: true, data: documento });
+});
+
 export default router;

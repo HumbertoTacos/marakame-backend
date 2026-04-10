@@ -87,15 +87,33 @@ enum TipoAdiccion {
   OTRO
 }
 
+// Nuevos Enums para Expediente Físico e Ingreso
+enum TipoIngreso {
+  PRIMARIO
+  REFORZAMIENTO
+}
+
+enum UbicacionFisica {
+  LADO_IZQ
+  LADO_DER
+  EVALUACIONES
+}
+
+enum EstadoDocumentoExpediente {
+  PENDIENTE
+  ENTREGADO
+}
+
 model Paciente {
   id              Int            @id @default(autoincrement())
   // Datos básicos
+  claveUnica      String?        @unique // Número cronológico simple
   nombre          String
   apellidoPaterno String
   apellidoMaterno String
   fechaNacimiento DateTime
   sexo            String // M / F
-  curp            String?        @unique // Agregado para validación única
+  curp            String?        @unique
   estadoCivil     String?
   hijos           Int?
   escolaridad     String?
@@ -118,6 +136,14 @@ model Paciente {
   areaDeseada         AreaCentro?
   // Sustancias (del primer contacto)
   sustancias      String[]
+  
+  // Nuevos campos de Gestión de Ingreso
+  tipoIngreso          TipoIngreso?   @default(PRIMARIO)
+  nivelTratamiento     Int            @default(1)
+  fechaIngreso         DateTime?
+  fechaEgresoPrevista  DateTime?
+  totalDiasTratamiento Int?
+
   // Timestamps
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
@@ -133,8 +159,9 @@ model Paciente {
   estudioSocioeconomico  EstudioSocioeconomico?
   inventarioPertenencias InventarioPertenencias?
   documentos             Documento[]
+  expedienteFisico       DocumentoExpediente[]
 
-  // Cama (1 to 1) - Reemplaza los campos antiguos de string
+  // Cama (1 to 1)
   cama Cama?
 
   // Relaciones Modulo Finanzas y Agenda
@@ -533,6 +560,18 @@ model Documento {
   @@map("documentos")
 }
 
+// Control de Expediente Físico
+model DocumentoExpediente {
+  id         Int                       @id @default(autoincrement())
+  nombre     String
+  ubicacion  UbicacionFisica
+  estado     EstadoDocumentoExpediente @default(PENDIENTE)
+  pacienteId Int
+  paciente   Paciente                  @relation(fields: [pacienteId], references: [id])
+
+  @@map("documentos_expediente_fisico")
+}
+
 // ============================================================
 // FINANZAS Y PAGOS
 // ============================================================
@@ -640,17 +679,28 @@ enum EstadoCama {
   RESERVADA
 }
 
-model Cama {
-  id          Int        @id @default(autoincrement())
-  codigo      String?    @unique // Ej: "H-01", "M-05" (Opcional para compatibilidad)
-  numero      String     @unique // Mantenemos numero para compatibilidad
-  area        AreaCentro
-  estado      EstadoCama @default(DISPONIBLE)
-  descripcion String?
-  pacienteId  Int?       @unique
+model Habitacion {
+  id           Int        @id @default(autoincrement())
+  nombre       String     // A, B, C, D
+  capacidadMax Int        @default(4)
+  area         AreaCentro
+  camas        Cama[]
 
-  paciente     Paciente?        @relation(fields: [pacienteId], references: [id])
-  asignaciones AsignacionCama[]
+  @@map("habitaciones")
+}
+
+model Cama {
+  id            Int         @id @default(autoincrement())
+  codigo        String?     @unique // Ej: "H-01", "M-05"
+  numero        String      @unique
+  estado        EstadoCama  @default(DISPONIBLE)
+  descripcion   String?
+  pacienteId    Int?        @unique
+  habitacionId  Int?
+  
+  habitacion    Habitacion?  @relation(fields: [habitacionId], references: [id])
+  paciente      Paciente?   @relation(fields: [pacienteId], references: [id])
+  asignaciones  AsignacionCama[]
 
   @@map("camas")
 }
@@ -805,7 +855,7 @@ model Empleado {
   salarioBase  Float
   activo       Boolean   @default(true)
   createdAt    DateTime  @default(now())
-  deletedAt    DateTime?
+  updatedAt    DateTime  @updatedAt
 
   prenominas PreNomina[]
 
@@ -814,13 +864,13 @@ model Empleado {
 
 model Nomina {
   id                Int          @id @default(autoincrement())
-  periodo           String // Ej: "2026-04"
+  folio             String       @unique
+  periodo           String // Ej: "Primera Quincena Marzo 2024"
   fechaInicio       DateTime
   fechaFin          DateTime
   estado            EstadoNomina @default(BORRADOR)
-  totalGeneral      Float?
   usuarioAutorizaId Int?
-  fechaAutorizacion DateTime?
+  totalGeneral      Float?       @default(0)
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
@@ -831,33 +881,28 @@ model Nomina {
 }
 
 model PreNomina {
-  id             Int   @id @default(autoincrement())
-  nominaId       Int
-  empleadoId     Int
-  // Del checador
-  diasTrabajados Float @default(0)
-  horasExtra     Float @default(0)
-  incidencias    Json? // Faltas, retardos, permisos
-  // Cálculos
-  salarioBase    Float
-  bonos          Float @default(0)
-  deducciones    Float @default(0)
-  totalAPagar    Float
+  id           Int   @id @default(autoincrement())
+  nominaId     Int
+  empleadoId   Int
+  salarioBase  Float
+  bonos        Float @default(0)
+  deducciones  Float @default(0)
+  totalAPagar  Float
 
   nomina   Nomina   @relation(fields: [nominaId], references: [id])
   empleado Empleado @relation(fields: [empleadoId], references: [id])
 
-  @@map("pre_nomina")
+  @@map("prenominas")
 }
 
 // ============================================================
-// AUDITORÍA
+// AUDITORIA
 // ============================================================
 
 model Auditoria {
   id        Int      @id @default(autoincrement())
   usuarioId Int
-  accion    String
+  accion    String // LOGIN, CREATE, UPDATE, DELETE, EXPORT
   modulo    String
   detalle   Json?
   ip        String?
