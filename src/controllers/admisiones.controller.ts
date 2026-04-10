@@ -13,29 +13,53 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
 
     if (data.pacienteId) {
       pacienteIdToUse = parseInt(data.pacienteId as string, 10);
-      // Opcionalmente actualizar datos si vienen en el form
     } else {
-      const paciente = await tx.paciente.create({
-        data: {
-          nombre: data.nombrePaciente,
-          apellidoPaterno: data.apellidoPaterno,
-          apellidoMaterno: data.apellidoMaterno,
-          fechaNacimiento: new Date(data.fechaNacimiento),
-          sexo: data.sexo,
-          curp: data.curp,
-          estadoCivil: data.estadoCivil,
-          hijos: parseInt(data.hijos || '0', 10),
-          escolaridad: data.escolaridad,
-          lugarOrigen: data.lugarOrigen,
-          ocupacion: data.ocupacion,
-          telefono: data.telefonoPaciente,
-          celular: data.celularPaciente,
-          direccion: data.direccionPaciente,
-          sustancias: data.sustancias || [],
-          estado: 'PROSPECTO'
-        }
-      });
-      pacienteIdToUse = paciente.id;
+      // 1.1 Normalización de CURP (Crítico para evitar errores de duplicidad por espacios o strings vacíos)
+      const normalizedCurp = data.curp && data.curp.trim() !== '' 
+        ? data.curp.trim().toUpperCase() 
+        : null;
+
+      // 1.2 Buscar si el paciente ya existe (Solo si el CURP no es null)
+      const pacienteExistente = normalizedCurp 
+        ? await tx.paciente.findUnique({ where: { curp: normalizedCurp } })
+        : null;
+
+      if (pacienteExistente) {
+        pacienteIdToUse = pacienteExistente.id;
+        // Actualizar datos básicos si es necesario para mantener el expediente al día
+        await tx.paciente.update({
+          where: { id: pacienteExistente.id },
+          data: {
+            telefono: data.telefonoPaciente || pacienteExistente.telefono,
+            celular: data.celularPaciente || pacienteExistente.celular,
+            direccion: data.direccionPaciente || pacienteExistente.direccion,
+            sustancias: data.sustancias || pacienteExistente.sustancias,
+          }
+        });
+      } else {
+        // Crear nuevo paciente (Si el CURP existe es null, Postgres permite múltiples NULLs pero no múltiples "")
+        const paciente = await tx.paciente.create({
+          data: {
+            nombre: data.nombrePaciente,
+            apellidoPaterno: data.apellidoPaterno,
+            apellidoMaterno: data.apellidoMaterno,
+            fechaNacimiento: new Date(data.fechaNacimiento),
+            sexo: data.sexo,
+            curp: normalizedCurp, // Usar el CURP normalizado
+            estadoCivil: data.estadoCivil,
+            hijos: parseInt(data.hijos || '0', 10),
+            escolaridad: data.escolaridad,
+            lugarOrigen: data.lugarOrigen,
+            ocupacion: data.ocupacion,
+            telefono: data.telefonoPaciente,
+            celular: data.celularPaciente,
+            direccion: data.direccionPaciente,
+            sustancias: data.sustancias || [],
+            estado: 'PROSPECTO'
+          }
+        });
+        pacienteIdToUse = paciente.id;
+      }
     }
 
     // 2. Crear el registro de Primer Contacto
