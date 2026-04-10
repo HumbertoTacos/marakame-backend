@@ -97,6 +97,7 @@ enum UbicacionFisica {
 enum EstadoDocumentoExpediente {
   PENDIENTE
   ENTREGADO
+  COMPLETADO
 }
 
 model Paciente {
@@ -606,6 +607,7 @@ model DocumentoExpediente {
   nombre     String
   ubicacion  UbicacionFisica
   estado     EstadoDocumentoExpediente @default(PENDIENTE)
+  archivoUrl String?
   pacienteId Int
   paciente   Paciente                  @relation(fields: [pacienteId], references: [id])
 
