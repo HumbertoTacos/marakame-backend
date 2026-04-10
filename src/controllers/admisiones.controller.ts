@@ -88,8 +88,6 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
         acuerdo: data.acuerdo,
         observaciones: data.observaciones,
         posibilidadesEconomicas: data.posibilidadesEconomicas,
-        medicoNombre: data.medicoNombre,
-        conclusionMedica: data.conclusionMedica,
       }
     });
 

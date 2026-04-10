@@ -34,9 +34,19 @@ export const getEmpleados = async (req: Request, res: Response) => {
 export const generarNomina = async (req: Request, res: Response) => {
   const { periodo, fechaInicio, fechaFin } = req.body;
 
+  // 0. Generar Folio NOM-YYYY-NNN
+  const currentYear = new Date().getFullYear();
+  const count = await prisma.nomina.count({
+    where: {
+      folio: { startsWith: `NOM-${currentYear}` }
+    }
+  });
+  const folio = `NOM-${currentYear}-${String(count + 1).padStart(3, '0')}`;
+
   // 1. Crear el cajón de Nómina Base
   const nomina = await prisma.nomina.create({
     data: {
+      folio,
       periodo,
       fechaInicio: new Date(fechaInicio),
       fechaFin: new Date(fechaFin),

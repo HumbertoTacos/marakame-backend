@@ -58,6 +58,7 @@ model Usuario {
   pagosRecibidos  PagoPaciente[]
   cargosAplicados CargoPaciente[]
   citasAsignadas  CitaAgenda[]
+  ingresos        Ingreso[]
 
   @@map("usuarios")
 }
@@ -163,6 +164,7 @@ model Paciente {
   pagos  PagoPaciente[]
   cargos CargoPaciente[]
   citas  CitaAgenda[]
+  ingresos Ingreso[]
 
   @@map("pacientes")
 }
@@ -223,9 +225,6 @@ model PrimerContacto {
   acuerdo                 String? // Llamar / Esperar llamada / Posible ingreso...
   observaciones           String?
   posibilidadesEconomicas String?
-  // Validación médica
-  medicoNombre            String?
-  conclusionMedica        String?
   createdAt               DateTime          @default(now())
 
   paciente   Paciente    @relation(fields: [pacienteId], references: [id])
@@ -279,6 +278,7 @@ model ValoracionMedica {
   pronostico          String?  @db.Text
   tratamientoSugerido String?  @db.Text
   esAptoParaIngreso   Boolean  @default(false)
+  documentoFirmadoUrl String?
   
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
@@ -331,6 +331,12 @@ enum EstadoSolicitud {
   EN_ESPERA
 }
 
+enum EstadoIngreso {
+  EN_PROCESO
+  COMPLETADO
+  CANCELADO
+}
+
 model SolicitudIngreso {
   id              Int             @id @default(autoincrement())
   folio           String          @unique // Generado ADM-YYYY-NNN
@@ -370,6 +376,37 @@ model AsignacionCama {
   createdAt            DateTime         @default(now())
 
   @@map("asignaciones_cama")
+}
+
+model Ingreso {
+  id                      Int            @id @default(autoincrement())
+  pacienteId              Int
+  usuarioId               Int
+  motivoIngreso           String?        @db.Text
+  estado                  EstadoIngreso  @default(EN_PROCESO)
+  pasoActual              Int            @default(1)
+  
+  // Datos de la cita / valoración (Wizard steps)
+  fechaCita               DateTime?
+  horaCita                String?
+  medicoAsignado          String?
+  resultadoValoracion     String?        @db.Text
+  observacionesValoracion String?        @db.Text
+  esApto                  Boolean?
+  motivoNoApto            String?        @db.Text
+  
+  // Asignación final (Step 8)
+  habitacionAsignada      String?
+  areaAsignada            String?
+  fechaIngreso            DateTime?
+  
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+
+  paciente                Paciente       @relation(fields: [pacienteId], references: [id])
+  usuario                 Usuario        @relation(fields: [usuarioId], references: [id])
+
+  @@map("ingresos")
 }
 
 // ============================================================
@@ -873,6 +910,7 @@ model Nomina {
   fechaFin          DateTime
   estado            EstadoNomina @default(BORRADOR)
   usuarioAutorizaId Int?
+  fechaAutorizacion DateTime?
   totalGeneral      Float?       @default(0)
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
@@ -884,13 +922,16 @@ model Nomina {
 }
 
 model PreNomina {
-  id           Int   @id @default(autoincrement())
-  nominaId     Int
-  empleadoId   Int
-  salarioBase  Float
-  bonos        Float @default(0)
-  deducciones  Float @default(0)
-  totalAPagar  Float
+  id             Int   @id @default(autoincrement())
+  nominaId       Int
+  empleadoId     Int
+  diasTrabajados Float @default(15)
+  horasExtra     Float @default(0)
+  salarioBase    Float
+  bonos          Float @default(0)
+  deducciones    Float @default(0)
+  totalAPagar    Float
+  incidencias    String? @db.Text
 
   nomina   Nomina   @relation(fields: [nominaId], references: [id])
   empleado Empleado @relation(fields: [empleadoId], references: [id])
