@@ -204,6 +204,13 @@ enum FuenteReferencia {
   OTRO
 }
 
+enum TipoAcuerdoSeguimiento {
+  LLAMARA_PROSPECTO
+  LLAMARA_MARAKAME
+  CITA_PROGRAMADA
+  RECHAZADO
+}
+
 model PrimerContacto {
   id                      Int               @id @default(autoincrement())
   pacienteId              Int
@@ -223,7 +230,9 @@ model PrimerContacto {
   requiereIntervencion    Boolean           @default(false)
   estadoPrevioTratamiento Boolean           @default(false)
   // Seguimiento
-  acuerdo                 String? // Llamar / Esperar llamada / Posible ingreso...
+  acuerdo                 String? // Campo anterior (legacy/observaciones)
+  acuerdoSeguimiento      TipoAcuerdoSeguimiento?
+  fechaSeguimiento        DateTime?
   observaciones           String?
   posibilidadesEconomicas String?
   createdAt               DateTime          @default(now())

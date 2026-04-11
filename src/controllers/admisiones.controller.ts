@@ -86,6 +86,8 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
         requiereIntervencion: data.requiereIntervencion === 'true' || data.requiereIntervencion === true,
         estadoPrevioTratamiento: data.estadoPrevioTratamiento === 'true' || data.estadoPrevioTratamiento === true,
         acuerdo: data.acuerdo,
+        acuerdoSeguimiento: data.acuerdoSeguimiento,
+        fechaSeguimiento: data.fechaSeguimiento ? new Date(data.fechaSeguimiento) : null,
         observaciones: data.observaciones,
         posibilidadesEconomicas: data.posibilidadesEconomicas,
       }
@@ -106,6 +108,9 @@ export const getPrimerContactos = async (req: Request, res: Response) => {
       relacionPaciente: true,
       dia: true,
       fuenteReferencia: true,
+      acuerdoSeguimiento: true,
+      fechaSeguimiento: true,
+      createdAt: true,
       paciente: {
         select: {
           id: true,
@@ -113,11 +118,13 @@ export const getPrimerContactos = async (req: Request, res: Response) => {
           apellidoPaterno: true,
           apellidoMaterno: true,
           sexo: true,
-          fechaNacimiento: true
+          fechaNacimiento: true,
+          sustancias: true
         }
       },
       usuario: { select: { nombre: true, apellidos: true } }
     },
+    orderBy: { createdAt: 'desc' }
   });
 
   const privacyData = aplicarCapaPrivacidad(contactos);
@@ -137,6 +144,22 @@ export const getPrimerContactoById = async (req: Request, res: Response) => {
   if (!contacto) throw new AppError(404, 'Primer contacto no encontrado');
 
   res.json({ success: true, data: contacto });
+};
+
+export const updatePrimerContacto = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const data = req.body;
+
+  const result = await prisma.primerContacto.update({
+    where: { id: parseInt(id as string, 10) },
+    data: {
+      acuerdoSeguimiento: data.acuerdoSeguimiento,
+      fechaSeguimiento: data.fechaSeguimiento ? new Date(data.fechaSeguimiento) : undefined,
+      observaciones: data.observaciones
+    }
+  });
+
+  res.json({ success: true, data: result });
 };
 
 export const createValoracionDiagnostica = async (req: Request, res: Response) => {

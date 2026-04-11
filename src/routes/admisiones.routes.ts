@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../middlewares/auth';
 import { 
-  createPrimerContacto, getPrimerContactos, getPrimerContactoById,
+  createPrimerContacto, updatePrimerContacto, getPrimerContactos, getPrimerContactoById,
   createValoracionDiagnostica, getValoraciones, getValoracionById,
   createIngreso, updateIngreso, getIngresos, getIngresoById,
   // Gestión de Camas y Solicitudes
@@ -29,6 +29,7 @@ router.post('/solicitudes/:id/asignar-cama', asignarCama);
 router.post('/primer-contacto', createPrimerContacto);
 router.get('/primer-contacto', getPrimerContactos);
 router.get('/primer-contacto/:id', getPrimerContactoById);
+router.put('/primer-contacto/:id', updatePrimerContacto);
 
 // Valoracion Diagnostica
 router.post('/valoracion', createValoracionDiagnostica);
