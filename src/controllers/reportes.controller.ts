@@ -138,7 +138,7 @@ export const generarDocumentoFirmaPDF = async (req: Request, res: Response) => {
   try {
     // 1. Obtener datos del documento y paciente
     const docExp = await prisma.documentoExpediente.findUnique({
-      where: { id: parseInt(docId, 10) },
+      where: { id: parseInt(docId as string, 10) },
       include: { paciente: true }
     });
 

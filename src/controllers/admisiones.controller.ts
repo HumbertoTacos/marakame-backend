@@ -99,8 +99,23 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
 
 export const getPrimerContactos = async (req: Request, res: Response) => {
   const contactos = await prisma.primerContacto.findMany({
-    include: {
-      paciente: true,
+    select: {
+      id: true,
+      solicitanteNombre: true,
+      solicitanteTelefono: true,
+      relacionPaciente: true,
+      dia: true,
+      fuenteReferencia: true,
+      paciente: {
+        select: {
+          id: true,
+          nombre: true,
+          apellidoPaterno: true,
+          apellidoMaterno: true,
+          sexo: true,
+          fechaNacimiento: true
+        }
+      },
       usuario: { select: { nombre: true, apellidos: true } }
     },
   });
@@ -159,8 +174,22 @@ export const createValoracionDiagnostica = async (req: Request, res: Response) =
 
 export const getValoraciones = async (req: Request, res: Response) => {
   const valoraciones = await prisma.valoracionDiagnostica.findMany({
-    include: {
-      paciente: true,
+    select: {
+      id: true,
+      cumpleCriteriosInternamiento: true,
+      aceptaInternarse: true,
+      medicoNombre: true,
+      fechaTentativaIngreso: true,
+      createdAt: true,
+      paciente: {
+        select: {
+          id: true,
+          nombre: true,
+          apellidoPaterno: true,
+          apellidoMaterno: true,
+          claveUnica: true
+        }
+      },
       usuario: { select: { nombre: true, apellidos: true } }
     },
   });
@@ -250,8 +279,21 @@ export const updateIngreso = async (req: Request, res: Response) => {
 
 export const getIngresos = async (req: Request, res: Response) => {
   const ingresos = await prisma.ingreso.findMany({
-    include: {
-      paciente: true,
+    select: {
+      id: true,
+      estado: true,
+      pasoActual: true,
+      fechaIngreso: true,
+      areaAsignada: true,
+      paciente: {
+        select: {
+          id: true,
+          nombre: true,
+          apellidoPaterno: true,
+          apellidoMaterno: true,
+          claveUnica: true
+        }
+      },
       usuario: { select: { nombre: true, apellidos: true } }
     },
   });
@@ -316,10 +358,35 @@ export const getCamas = async (req: Request, res: Response) => {
 
 export const getSolicitudes = async (req: Request, res: Response) => {
   const solicitudes = await prisma.solicitudIngreso.findMany({
-    include: {
-      paciente: true,
-      solicitante: true,
-      asignacionCama: true
+    select: {
+      id: true,
+      folio: true,
+      estado: true,
+      urgencia: true,
+      createdAt: true,
+      paciente: {
+        select: {
+          id: true,
+          nombre: true,
+          apellidoPaterno: true,
+          apellidoMaterno: true,
+          claveUnica: true
+        }
+      },
+      solicitante: {
+        select: {
+          nombre: true,
+          parentesco: true
+        }
+      },
+      asignacionCama: {
+        select: {
+          id: true,
+          cama: {
+            select: { numero: true }
+          }
+        }
+      }
     },
   });
 

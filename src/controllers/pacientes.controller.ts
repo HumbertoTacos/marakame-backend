@@ -29,18 +29,40 @@ export const getPacientes = async (req: Request, res: Response) => {
 
   const pacientes = await prisma.paciente.findMany({
     where,
-    include: {
+    select: {
+      id: true,
+      claveUnica: true,
+      nombre: true,
+      apellidoPaterno: true,
+      apellidoMaterno: true,
+      sexo: true,
+      fechaNacimiento: true,
+      estado: true,
+      createdAt: true,
       primerContacto: {
+        select: {
+          id: true,
+          solicitanteNombre: true,
+          relacionPaciente: true
+        },
         orderBy: { createdAt: 'desc' },
         take: 1
       },
       cama: {
-        include: {
-          habitacion: true
+        select: {
+          numero: true,
+          habitacion: {
+            select: { nombre: true, area: true }
+          }
         }
       },
-      expediente: true,
-      valoracionMedica: true
+      valoracionMedica: {
+        select: {
+          id: true,
+          esAptoParaIngreso: true,
+          createdAt: true
+        }
+      }
     },
     orderBy: { createdAt: 'desc' }
   });
@@ -63,13 +85,39 @@ export const getAprobadosParaIngreso = async (_req: Request, res: Response) => {
         esAptoParaIngreso: true
       }
     },
-    include: {
+    select: {
+      id: true,
+      nombre: true,
+      apellidoPaterno: true,
+      apellidoMaterno: true,
+      curp: true,
+      sexo: true,
+      fechaNacimiento: true,
+      areaDeseada: true,
+      sustancias: true,
       primerContacto: {
+        select: {
+          solicitanteNombre: true,
+          relacionPaciente: true,
+          solicitanteTelefono: true,
+          solicitanteCelular: true,
+          observaciones: true
+        },
         orderBy: { createdAt: 'desc' },
         take: 1
       },
-      familiar: true,
-      valoracionMedica: true
+      familiar: {
+        select: {
+          correo: true,
+          municipio: true,
+          estado: true
+        }
+      },
+      valoracionMedica: {
+        select: {
+          createdAt: true
+        }
+      }
     },
     orderBy: { updatedAt: 'desc' }
   });
