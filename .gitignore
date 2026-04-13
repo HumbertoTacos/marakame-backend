@@ -18,13 +18,11 @@ yarn-error.log*
 # Build
 dist/
 
-# Prisma
-# We usually keep migrations but ignore the query engine artifacts if localized
-# However, prisma-client is in node_modules, so it's ignored by default.
-
 # Uploaded files
 uploads/
 
 # OS files
 .DS_Store
 Thumbs.db
+
+scratch/

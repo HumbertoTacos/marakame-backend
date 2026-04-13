@@ -63,6 +63,20 @@ async function main() {
     }
   }
 
+  // 2.5 CATÁLOGO DE SUSTANCIAS
+  console.log('🧪 Poblado catálogo de sustancias...');
+  const sustanciasBase = [
+    'ALCOHOL', 'CRISTAL', 'METANFETAMINAS', 'MARIHUANA', 'COCAÍNA', 
+    'HEROÍNA', 'BENZODIACEPINAS', 'TABACO', 'LUDOPATÍA', 'OTRO'
+  ];
+  for (const s of sustanciasBase) {
+    await prisma.sustancia.upsert({
+      where: { nombre: s },
+      update: { activo: true },
+      create: { nombre: s, activo: true }
+    });
+  }
+
   // 3. PRODUCTOS DE ALMACÉN
   console.log('📦 Poblado inventario de farmacia y suministros...');
   const productos = [
@@ -86,20 +100,23 @@ async function main() {
   console.log('🏥 Registrando pacientes y expedientes clínicos (Muestra Completa)...');
   
   // PACIENTE 1: INTERNADO (Flujo Completo)
-  const pInternado = await prisma.paciente.create({
-    data: {
-      claveUnica: 'ADM-2026-001',
-      nombre: 'Carlos',
-      apellidoPaterno: 'Jiménez',
-      apellidoMaterno: 'Sosa',
-      fechaNacimiento: new Date('1990-05-15'),
-      sexo: 'M',
-      estado: EstadoPaciente.INTERNADO,
-      sustancias: ['Alcohol', 'Tabaco'],
-      direccion: 'Av. Siempre Viva 123, Tepic',
-      areaDeseada: AreaCentro.HOMBRES,
-    },
-  });
+  let pInternado = await prisma.paciente.findUnique({ where: { claveUnica: 'ADM-2026-001' } });
+  if (!pInternado) {
+    pInternado = await prisma.paciente.create({
+      data: {
+        claveUnica: 'ADM-2026-001',
+        nombre: 'Carlos',
+        apellidoPaterno: 'Jiménez',
+        apellidoMaterno: 'Sosa',
+        fechaNacimiento: new Date('1990-05-15'),
+        sexo: 'M',
+        estado: EstadoPaciente.INTERNADO,
+        sustancias: ['ALCOHOL', 'TABACO'],
+        direccion: 'Av. Siempre Viva 123, Tepic',
+        areaDeseada: AreaCentro.HOMBRES,
+      },
+    });
+  }
 
   const expCarlos = await prisma.expediente.upsert({
     where: { pacienteId: pInternado.id },
@@ -144,92 +161,98 @@ async function main() {
   });
 
   // PACIENTE 2: PROSPECTO (CRM - Agenda)
-  const pProspecto = await prisma.paciente.create({
-    data: {
-      nombre: 'María',
-      apellidoPaterno: 'Rodríguez',
-      apellidoMaterno: 'Pena',
-      fechaNacimiento: new Date('1995-10-20'),
-      sexo: 'F',
-      estado: EstadoPaciente.PROSPECTO,
-      sustancias: ['Cannabis'],
-      direccion: 'Col. Centro, Xalisco',
-    },
-  });
+  let pProspecto = await prisma.paciente.findFirst({ where: { nombre: 'María', apellidoPaterno: 'Rodríguez' } });
+  if (!pProspecto) {
+    pProspecto = await prisma.paciente.create({
+      data: {
+        nombre: 'María',
+        apellidoPaterno: 'Rodríguez',
+        apellidoMaterno: 'Pena',
+        fechaNacimiento: new Date('1995-10-20'),
+        sexo: 'F',
+        estado: EstadoPaciente.PROSPECTO,
+        sustancias: ['CANNABIS'],
+        direccion: 'Col. Centro, Xalisco',
+      },
+    });
 
-  await prisma.primerContacto.create({
-    data: {
-      pacienteId: pProspecto.id,
-      usuarioId: admisionista!.id,
-      nombreLlamada: 'Elena Rodríguez',
-      parentescoLlamada: 'Madre',
-      nombrePaciente: 'María Rodríguez Pena',
-      celularLlamada: '3111234567',
-      sustancias: ['CANNABIS', 'TABACO'],
-      dispuestoInternarse: 'SI',
-      conclusionMedica: 'Interesada en internamiento voluntario. Se programa cita para mañana.',
-      acuerdoSeguimiento: TipoAcuerdoSeguimiento.CITA_PROGRAMADA,
-      fechaAcuerdo: new Date(new Date().getTime() + 24 * 60 * 60 * 1000), // Mañana
-    },
-  });
+    await prisma.primerContacto.create({
+      data: {
+        pacienteId: pProspecto.id,
+        usuarioId: admisionista!.id,
+        nombreLlamada: 'Elena Rodríguez',
+        parentescoLlamada: 'Madre',
+        nombrePaciente: 'María Rodríguez Pena',
+        celularLlamada: '3111234567',
+        sustancias: ['CANNABIS', 'TABACO'],
+        dispuestoInternarse: 'SI',
+        conclusionMedica: 'Interesada en internamiento voluntario. Se programa cita para mañana.',
+        acuerdoSeguimiento: TipoAcuerdoSeguimiento.CITA_PROGRAMADA,
+        fechaAcuerdo: new Date(new Date().getTime() + 24 * 60 * 60 * 1000), // Mañana
+      },
+    });
+  }
 
   // PACIENTE 3: EN VALORACIÓN (Bandeja Médica)
-  const pValoracion = await prisma.paciente.create({
-    data: {
-      nombre: 'Fernando',
-      apellidoPaterno: 'Gómez',
-      apellidoMaterno: 'Arias',
-      fechaNacimiento: new Date('1985-08-12'),
-      sexo: 'M',
-      estado: EstadoPaciente.EN_VALORACION,
-      sustancias: ['Cristal', 'Metanfetaminas'],
-      areaDeseada: AreaCentro.HOMBRES,
-    },
-  });
+  let pValoracion = await prisma.paciente.findFirst({ where: { nombre: 'Fernando', apellidoPaterno: 'Gómez' } });
+  if (!pValoracion) {
+    pValoracion = await prisma.paciente.create({
+      data: {
+        nombre: 'Fernando',
+        apellidoPaterno: 'Gómez',
+        apellidoMaterno: 'Arias',
+        fechaNacimiento: new Date('1985-08-12'),
+        sexo: 'M',
+        estado: EstadoPaciente.EN_VALORACION,
+        sustancias: ['CRISTAL', 'METANFETAMINAS'],
+        areaDeseada: AreaCentro.HOMBRES,
+      },
+    });
 
-  await prisma.primerContacto.create({
-    data: {
-      pacienteId: pValoracion.id,
-      usuarioId: admisionista!.id,
-      nombreLlamada: 'Fernando Gómez',
-      parentescoLlamada: 'PACIENTE',
-      nombrePaciente: 'Fernando Gómez Arias',
-      celularLlamada: '3119876543',
-      sustancias: ['CRISTAL'],
-      dispuestoInternarse: 'SI',
-      conclusionMedica: 'Solicita valoración inmediata por crisis de consumo.',
-      acuerdoSeguimiento: TipoAcuerdoSeguimiento.OTRO
-    },
-  });
+    await prisma.primerContacto.create({
+      data: {
+        pacienteId: pValoracion.id,
+        usuarioId: admisionista!.id,
+        nombreLlamada: 'Fernando Gómez',
+        parentescoLlamada: 'PACIENTE',
+        nombrePaciente: 'Fernando Gómez Arias',
+        celularLlamada: '3119876543',
+        sustancias: ['CRISTAL'],
+        dispuestoInternarse: 'SI',
+        conclusionMedica: 'Solicita valoración inmediata por crisis de consumo.',
+        acuerdoSeguimiento: TipoAcuerdoSeguimiento.OTRO
+      },
+    });
 
-  // 4.1 Valoración Médica (Nueva Estructura) para Fernando
-  console.log('🩺 Generando valoración médica institucional para Fernando...');
-  await prisma.valoracionMedica.create({
-    data: {
-      pacienteId: pValoracion.id,
-      estado: 'BORRADOR',
-      residente: 'Dr. Julián Martínez',
-      tipoValoracion: 'PRESENCIAL',
-      fechaValoracion: new Date(),
-      horaValoracion: '11:45 AM',
-      motivoConsulta: 'Crisis de ansiedad y deseo intenso de consumo (craving). Refiere haber consumido cristal hace 24 horas.',
-      padecimientoActual: 'Paciente masculino que inicia consumo hace 5 años, con incremento notable en los últimos 6 meses. Presenta episodios de paranoia y pérdida de peso significativa.',
-      sintomasGenerales: 'Taquicardia leve, pupilas dilatadas, insomnio de 3 días, irritabilidad extrema.',
-      tratamientosPrevios: 'Anexo por 3 meses en 2024 (sin éxito), terapia psicológica ambulatoria.',
-      tensionArterial: '135/85',
-      frecuenciaCardiaca: '92',
-      frecuenciaRespiratoria: '20',
-      temperatura: '37.1',
-      peso: '68',
-      talla: '1.75',
-      exploracionFisicaDesc: 'Buen estado de hidratación. Mucosas húmedas. Tórax con ruidos respiratorios normales. Abdomen blando, no doloroso.',
-      examenMental: 'Consciente, orientado en 3 esferas. Discurso coherente pero acelerado. Afecto ansioso. No presenta alucinaciones en el momento.',
-      impresionDiagnostica: 'Trastorno por consumo de estimulantes (Metanfetaminas) Grave [F15.2]. Trastorno de ansiedad generalizada inducido por sustancias.',
-      pronostico: 'Reservado a evolución bajo tratamiento residencial.',
-      planTratamiento: 'Ingreso a programa residencial de 3 meses. Manejo farmacológico para control de ansiedad y abstinencia. Terapia cognitivo-conductual.',
-      esAptoParaIngreso: true
-    }
-  });
+    // 4.1 Valoración Médica (Nueva Estructura) para Fernando
+    console.log('🩺 Generando valoración médica institucional para Fernando...');
+    await prisma.valoracionMedica.create({
+      data: {
+        pacienteId: pValoracion.id,
+        estado: 'BORRADOR',
+        residente: 'Dr. Julián Martínez',
+        tipoValoracion: 'PRESENCIAL',
+        fechaValoracion: new Date(),
+        horaValoracion: '11:45 AM',
+        motivoConsulta: 'Crisis de ansiedad y deseo intenso de consumo (craving). Refiere haber consumido cristal hace 24 horas.',
+        padecimientoActual: 'Paciente masculino que inicia consumo hace 5 años, con incremento notable en los últimos 6 meses. Presenta episodios de paranoia y pérdida de peso significativa.',
+        sintomasGenerales: 'Taquicardia leve, pupilas dilatadas, insomnio de 3 días, irritabilidad extrema.',
+        tratamientosPrevios: 'Anexo por 3 meses en 2024 (sin éxito), terapia psicológica ambulatoria.',
+        tensionArterial: '135/85',
+        frecuenciaCardiaca: '92',
+        frecuenciaRespiratoria: '20',
+        temperatura: '37.1',
+        peso: '68',
+        talla: '1.75',
+        exploracionFisicaDesc: 'Buen estado de hidratación. Mucosas húmedas. Tórax con ruidos respiratorios normales. Abdomen blando, no doloroso.',
+        examenMental: 'Consciente, orientado en 3 esferas. Discurso coherente pero acelerado. Afecto ansioso. No presenta alucinaciones en el momento.',
+        impresionDiagnostica: 'Trastorno por consumo de estimulantes (Metanfetaminas) Grave [F15.2]. Trastorno de ansiedad generalizada inducido por sustancias.',
+        pronostico: 'Reservado a evolución bajo tratamiento residencial.',
+        planTratamiento: 'Ingreso a programa residencial de 3 meses. Manejo farmacológico para control de ansiedad y abstinencia. Terapia cognitivo-conductual.',
+        esAptoParaIngreso: true
+      }
+    });
+  }
 
   // 5. FINANZAS
   console.log('💰 Generando movimientos financieros...');
@@ -265,19 +288,22 @@ async function main() {
   
   // PACIENTE 4: EGRESADO + REFORZAMIENTO
   console.log('🎓 Registrando paciente egresado...');
-  const pEgresado = await prisma.paciente.create({
-    data: {
-      claveUnica: 'ADM-2025-088',
-      nombre: 'Elena',
-      apellidoPaterno: 'Luna',
-      apellidoMaterno: 'Mora',
-      fechaNacimiento: new Date('1988-03-12'),
-      sexo: 'F',
-      estado: EstadoPaciente.EGRESADO,
-      sustancias: ['Crystal'],
-      direccion: 'Col. San Juan, Tepic',
-    },
-  });
+  let pEgresado = await prisma.paciente.findUnique({ where: { claveUnica: 'ADM-2025-088' } });
+  if (!pEgresado) {
+    pEgresado = await prisma.paciente.create({
+      data: {
+        claveUnica: 'ADM-2025-088',
+        nombre: 'Elena',
+        apellidoPaterno: 'Luna',
+        apellidoMaterno: 'Mora',
+        fechaNacimiento: new Date('1988-03-12'),
+        sexo: 'F',
+        estado: EstadoPaciente.EGRESADO,
+        sustancias: ['Crystal'],
+        direccion: 'Col. San Juan, Tepic',
+      },
+    });
+  }
 
   await prisma.programaReforzamiento.upsert({
     where: { pacienteId: pEgresado.id },

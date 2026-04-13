@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { authenticate } from '../middlewares/auth';
 import { 
-  createPrimerContacto, updatePrimerContacto, getPrimerContactos, getPrimerContactoById, getSustancias,
+  createPrimerContacto, updatePrimerContacto, getPrimerContactos, getPrimerContactoById, getPrimerContactoByPacienteId, getSustancias,
   desactivarPrimerContacto,
-  agendarCitaProspecto, solicitarValoracionMedica,
+  agendarCitaProspecto, solicitarValoracionMedica, registrarLlegadaCita,
   createValoracionDiagnostica, getValoraciones, getValoracionById,
   createIngreso, updateIngreso, getIngresos, getIngresoById,
   // Gestión de Camas y Solicitudes
@@ -44,6 +44,8 @@ router.put('/primer-contacto/:id', updatePrimerContacto);
 router.patch('/primer-contacto/:id/desactivar', desactivarPrimerContacto);
 router.patch('/primer-contacto/:id/agendar', agendarCitaProspecto);
 router.patch('/paciente/:id/solicitar-valoracion', solicitarValoracionMedica);
+router.patch('/paciente/:id/confirmar-llegada', registrarLlegadaCita);
+router.get('/paciente/:pacienteId/primer-contacto', getPrimerContactoByPacienteId);
 
 // Valoracion Diagnostica
 router.post('/valoracion', createValoracionDiagnostica);

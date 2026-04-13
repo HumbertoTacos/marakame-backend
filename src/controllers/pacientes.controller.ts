@@ -96,10 +96,10 @@ export const getPacientes = async (req: Request, res: Response) => {
 export const getAprobadosParaIngreso = async (_req: Request, res: Response) => {
   const pacientes = await prisma.paciente.findMany({
     where: {
-      estado: 'PENDIENTE_INGRESO',
-      valoracionMedica: {
-        esAptoParaIngreso: true
-      }
+      OR: [
+        { estado: 'PENDIENTE_INGRESO' },
+        { estado: 'EN_VALORACION' }
+      ]
     },
     select: {
       id: true,

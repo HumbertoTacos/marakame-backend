@@ -19,8 +19,18 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
 
     if (data.pacienteId) {
       pacienteIdToUse = parseInt(data.pacienteId as string, 10);
+      // Si ya existe, actualizamos su estado según el dictamen
+      await tx.paciente.update({
+        where: { id: pacienteIdToUse },
+        data: { 
+          estado: data.esApto === true || data.esApto === 'true' ? 'PENDIENTE_INGRESO' : (data.esApto === false || data.esApto === 'false' ? 'CANALIZADO' : 'PROSPECTO'),
+          sustancias: data.sustancias || []
+        }
+      });
     } else {
-      // Crear nuevo paciente (Simplificado, los datos reales se quedan en PrimerContacto por ahora)
+      // Crear nuevo paciente con el estado dictaminado
+      const estadoFinal = data.esApto === true || data.esApto === 'true' ? 'PENDIENTE_INGRESO' : (data.esApto === false || data.esApto === 'false' ? 'CANALIZADO' : 'PROSPECTO');
+      
       const paciente = await tx.paciente.create({
         data: {
           nombre: nombreFinal,
@@ -28,7 +38,7 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
           apellidoMaterno: '',
           fechaNacimiento: fechaNacimientoFinal,
           sexo: 'M',
-          estado: 'PROSPECTO',
+          estado: estadoFinal,
           sustancias: data.sustancias || []
         }
       });
@@ -85,6 +95,8 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
         // 30-31. Cierre Médico
         medicoValoro: data.medicoValoro,
         conclusionMedica: data.conclusionMedica,
+        // Dictamen de Admisiones
+        esApto: data.esApto === true || data.esApto === 'true',
       }
     });
 
@@ -126,7 +138,8 @@ export const getPrimerContactos = async (req: Request, res: Response) => {
           apellidoMaterno: true,
           sexo: true,
           fechaNacimiento: true,
-          sustancias: true
+          sustancias: true,
+          estado: true
         }
       },
       usuario: { select: { nombre: true, apellidos: true } }
@@ -158,11 +171,20 @@ export const agendarCitaProspecto = async (req: Request, res: Response) => {
     throw new AppError(400, 'La fecha de la cita es obligatoria');
   }
 
+  // Normalizar fecha a mediodía local para evitar desfases UTC que cambien el día calendario
+  const dateObj = new Date(fechaAcuerdo);
+  const normalizedDate = new Date(
+    dateObj.getFullYear(),
+    dateObj.getMonth(),
+    dateObj.getDate(),
+    12, 0, 0
+  );
+
   const updated = await prisma.primerContacto.update({
     where: { id: parseInt(id as string, 10) },
     data: {
       acuerdoSeguimiento: 'CITA_PROGRAMADA',
-      fechaAcuerdo: new Date(fechaAcuerdo)
+      fechaAcuerdo: normalizedDate
     }
   });
 
@@ -196,6 +218,44 @@ export const solicitarValoracionMedica = async (req: Request, res: Response) => 
   });
 };
 
+/**
+ * Registrar Llegada del Prospecto a su Cita
+ * PATCH /api/v1/admisiones/paciente/:id/confirmar-llegada
+ */
+export const registrarLlegadaCita = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  // 1. Verificar que el paciente existe
+  const paciente = await prisma.paciente.findUnique({
+    where: { id: parseInt(id as string, 10) }
+  });
+
+  if (!paciente) throw new AppError(404, 'Paciente no encontrado');
+
+  // 2. Transicionar estado a EN_VALORACION (Esto desbloquea valoraciones en el front)
+  const updated = await prisma.paciente.update({
+    where: { id: parseInt(id as string, 10) },
+    data: { estado: 'EN_VALORACION' }
+  });
+
+  // 3. También buscamos si tiene una cita programada para marcarla o actualizar su acuerdo
+  await prisma.primerContacto.updateMany({
+    where: { 
+      pacienteId: paciente.id,
+      acuerdoSeguimiento: 'CITA_PROGRAMADA'
+    },
+    data: {
+      acuerdoSeguimiento: 'POSIBLE_INGRESO' // O un estado que indique que ya está aquí
+    }
+  });
+
+  res.json({ 
+    success: true, 
+    data: updated, 
+    message: 'Llegada registrada. El paciente ahora puede ser valorado por el médico y trabajo social.' 
+  });
+};
+
 export const getPrimerContactoById = async (req: Request, res: Response) => {
   const { id } = req.params;
   const contacto = await prisma.primerContacto.findUnique({
@@ -207,6 +267,25 @@ export const getPrimerContactoById = async (req: Request, res: Response) => {
   });
 
   if (!contacto) throw new AppError(404, 'Primer contacto no encontrado');
+  res.json({ success: true, data: contacto });
+};
+
+export const getPrimerContactoByPacienteId = async (req: Request, res: Response) => {
+  const { pacienteId } = req.params;
+  
+  const contacto = await prisma.primerContacto.findFirst({
+    where: { 
+      pacienteId: parseInt(pacienteId as string, 10),
+      activo: true 
+    },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      paciente: true,
+      usuario: { select: { nombre: true, apellidos: true } }
+    }
+  });
+
+  if (!contacto) throw new AppError(404, 'No se encontró un primer contacto para este paciente');
   res.json({ success: true, data: contacto });
 };
 

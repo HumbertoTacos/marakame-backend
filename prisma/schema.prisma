@@ -276,8 +276,9 @@ model PrimerContacto {
   acuerdoSeguimiento      TipoAcuerdoSeguimiento? @default(ESPERAR_LLAMADA)
   fechaAcuerdo            DateTime?
   // 30-31. Cierre Médico
-  medicoValoro            String?           // 30
-  conclusionMedica        String?           @db.Text // 31
+  medicoValoro      String?           // 30
+  conclusionMedica  String?           @db.Text // 31
+  esApto            Boolean?          @default(true)
   
   // Datos clínicos para herencia a valoración
   edadInicioConsumo       Int?
