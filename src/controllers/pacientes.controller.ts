@@ -42,8 +42,8 @@ export const getPacientes = async (req: Request, res: Response) => {
       primerContacto: {
         select: {
           id: true,
-          solicitanteNombre: true,
-          relacionPaciente: true
+          nombreLlamada: true,
+          parentescoLlamada: true
         },
         orderBy: { createdAt: 'desc' },
         take: 1
@@ -67,9 +67,22 @@ export const getPacientes = async (req: Request, res: Response) => {
     orderBy: { createdAt: 'desc' }
   });
 
+  // Mapear campos para compatibilidad con el frontend
+  const mappedPacientes = pacientes.map(p => {
+    const pc = p.primerContacto?.[0];
+    return {
+      ...p,
+      primerContacto: pc ? [{
+        ...pc,
+        solicitanteNombre: pc.nombreLlamada,
+        relacionPaciente: pc.parentescoLlamada
+      }] : []
+    };
+  });
+
   res.json({
     success: true,
-    data: pacientes
+    data: mappedPacientes
   });
 };
 
@@ -97,11 +110,11 @@ export const getAprobadosParaIngreso = async (_req: Request, res: Response) => {
       sustancias: true,
       primerContacto: {
         select: {
-          solicitanteNombre: true,
-          relacionPaciente: true,
-          solicitanteTelefono: true,
-          solicitanteCelular: true,
-          observaciones: true
+          nombreLlamada: true,
+          parentescoLlamada: true,
+          telCasaLlamada: true,
+          celularLlamada: true,
+          conclusionMedica: true
         },
         orderBy: { createdAt: 'desc' },
         take: 1
@@ -122,9 +135,25 @@ export const getAprobadosParaIngreso = async (_req: Request, res: Response) => {
     orderBy: { updatedAt: 'desc' }
   });
 
+  // Mapear campos para compatibilidad con el frontend
+  const mappedPacientes = pacientes.map(p => {
+    const pc = p.primerContacto?.[0];
+    return {
+      ...p,
+      primerContacto: pc ? [{
+        ...pc,
+        solicitanteNombre: pc.nombreLlamada,
+        relacionPaciente: pc.parentescoLlamada,
+        solicitanteTelefono: pc.telCasaLlamada,
+        solicitanteCelular: pc.celularLlamada,
+        observaciones: pc.conclusionMedica
+      }] : []
+    };
+  });
+
   res.json({
     success: true,
-    data: pacientes
+    data: mappedPacientes
   });
 };
 

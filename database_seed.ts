@@ -1,10 +1,10 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, EstadoCama, AreaCentro, Rol, EstadoPaciente, TipoAcuerdoSeguimiento } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('--- Iniciando Seed de Base de Datos Marakame ---');
+  console.log('--- Iniciando Seed de Base de Datos Marakame (v2.0) ---');
 
   const salt = await bcrypt.genSalt(10);
   const commonPassword = await bcrypt.hash('Marakame2026!', salt);
@@ -12,16 +12,18 @@ async function main() {
   // 1. USUARIOS POR DEPARTAMENTO
   console.log('👥 Creando usuarios por departamento...');
   const usuarios = [
-    { correo: 'admin@marakame.com', nombre: 'Roberto', apellidos: 'Admin', rol: 'ADMIN_GENERAL' },
-    { correo: 'medico@marakame.com', nombre: 'Dra. Laura', apellidos: 'García', rol: 'AREA_MEDICA' },
-    { correo: 'enfermeria@marakame.com', nombre: 'Juan', apellidos: 'Pérez', rol: 'ENFERMERIA' },
-    { correo: 'admisiones@marakame.com', nombre: 'Ana', apellidos: 'López', rol: 'ADMISIONES' },
-    { correo: 'psicologia@marakame.com', nombre: 'Lic. Martha', apellidos: 'Sánchez', rol: 'PSICOLOGIA' },
-    { correo: 'nutricion@marakame.com', nombre: 'Cecilia', apellidos: 'Ríos', rol: 'NUTRICION' },
+    { correo: 'admin@marakame.com', nombre: 'Roberto', apellidos: 'Admin', rol: Rol.ADMIN_GENERAL },
+    { correo: 'medico@marakame.com', nombre: 'Dra. Laura', apellidos: 'García', rol: Rol.AREA_MEDICA },
+    { correo: 'enfermeria@marakame.com', nombre: 'Juan', apellidos: 'Pérez', rol: Rol.ENFERMERIA },
+    { correo: 'admisiones@marakame.com', nombre: 'Ana', apellidos: 'López', rol: Rol.ADMISIONES },
+    { correo: 'psicologia@marakame.com', nombre: 'Lic. Martha', apellidos: 'Sánchez', rol: Rol.PSICOLOGIA },
+    { correo: 'nutricion@marakame.com', nombre: 'Cecilia', apellidos: 'Ríos', rol: Rol.NUTRICION },
+    { correo: 'finanzas@marakame.com', nombre: 'Ricardo', apellidos: 'Contador', rol: Rol.RRHH_FINANZAS },
+    { correo: 'almacen@marakame.com', nombre: 'Pablo', apellidos: 'Logística', rol: Rol.ALMACEN },
   ];
 
   for (const u of usuarios) {
-    await (prisma.usuario as any).upsert({
+    await prisma.usuario.upsert({
       where: { correo: u.correo },
       update: { passwordHash: commonPassword, rol: u.rol, activo: true },
       create: { ...u, passwordHash: commonPassword, activo: true },
@@ -34,27 +36,28 @@ async function main() {
 
   // 2. CATÁLOGO DE CAMAS
   console.log('🛏️ Inicializando catálogo de habitaciones y camas...');
-  const areas = ['HOMBRES', 'MUJERES', 'DETOX'];
+  const areas: AreaCentro[] = [AreaCentro.HOMBRES, AreaCentro.MUJERES, AreaCentro.DETOX];
   for (const area of areas) {
-    const habitacion = await (prisma.habitacion as any).upsert({
+    const habitacion = await prisma.habitacion.upsert({
       where: { nombre: `Habitación ${area}` },
-      update: { area: area as any },
+      update: { area },
       create: { 
         nombre: `Habitación ${area}`, 
         capacidadMax: 10, 
-        area: area as any 
+        area 
       },
     });
 
     for (let i = 1; i <= 5; i++) {
       const numero = `${area.charAt(0)}-${i.toString().padStart(2, '0')}`;
-      await (prisma.cama as any).upsert({
+      await prisma.cama.upsert({
         where: { numero },
         update: { habitacionId: habitacion.id },
         create: { 
-          numero, 
+          numero,
+          codigo: numero,
           habitacionId: habitacion.id, 
-          estado: 'DISPONIBLE' 
+          estado: EstadoCama.DISPONIBLE 
         },
       });
     }
@@ -80,19 +83,21 @@ async function main() {
   }
 
   // 4. PACIENTES Y EXPEDIENTES
-  console.log('🏥 Registrando pacientes y expedientes clínicos...');
+  console.log('🏥 Registrando pacientes y expedientes clínicos (Muestra Completa)...');
   
-  // PACIENTE 1: INTERNADO
-  const pInternado = await (prisma.paciente as any).create({
+  // PACIENTE 1: INTERNADO (Flujo Completo)
+  const pInternado = await prisma.paciente.create({
     data: {
+      claveUnica: 'ADM-2026-001',
       nombre: 'Carlos',
       apellidoPaterno: 'Jiménez',
       apellidoMaterno: 'Sosa',
       fechaNacimiento: new Date('1990-05-15'),
       sexo: 'M',
-      estado: 'INTERNADO',
+      estado: EstadoPaciente.INTERNADO,
       sustancias: ['Alcohol', 'Tabaco'],
       direccion: 'Av. Siempre Viva 123, Tepic',
+      areaDeseada: AreaCentro.HOMBRES,
     },
   });
 
@@ -101,16 +106,16 @@ async function main() {
     update: {},
     create: {
       pacienteId: pInternado.id,
-      diagnosticoPrincipal: 'Dependencia al alcohol crónica',
+      diagnosticoPrincipal: 'Dependencia al alcohol crónica (F10.2)',
       cuotaAsignada: 15000,
       saldoPendiente: 5000,
     },
   });
 
   // Asignar cama a Carlos
-  await (prisma.cama as any).update({
+  await prisma.cama.update({
     where: { numero: 'H-01' },
-    data: { estado: 'OCUPADA', pacienteId: pInternado.id },
+    data: { estado: EstadoCama.OCUPADA, pacienteId: pInternado.id },
   });
 
   // Agregar Signos Vitales para Carlos
@@ -124,7 +129,7 @@ async function main() {
       frecuenciaRespiratoria: 18,
       oxigenacion: 98,
       peso: 75.5,
-      observaciones: 'Paciente estable en su segundo día.',
+      observaciones: 'Paciente estable en su primer día de ingreso.',
     },
   });
 
@@ -134,19 +139,19 @@ async function main() {
       expedienteId: expCarlos.id,
       usuarioId: medico!.id,
       tipo: 'MEDICA',
-      nota: 'El paciente presenta una evolución favorable. Se mantiene esquema de desintoxicación gradual. Sin reporte de crisis convulsivas ni delirium.',
+      nota: 'El paciente presenta una evolución favorable. Se mantiene esquema de desintoxicación gradual.',
     },
   });
 
-  // PACIENTE 2: PROSPECTO (Solo primer contacto)
-  const pProspecto = await (prisma.paciente as any).create({
+  // PACIENTE 2: PROSPECTO (CRM - Agenda)
+  const pProspecto = await prisma.paciente.create({
     data: {
       nombre: 'María',
       apellidoPaterno: 'Rodríguez',
       apellidoMaterno: 'Pena',
       fechaNacimiento: new Date('1995-10-20'),
       sexo: 'F',
-      estado: 'PROSPECTO',
+      estado: EstadoPaciente.PROSPECTO,
       sustancias: ['Cannabis'],
       direccion: 'Col. Centro, Xalisco',
     },
@@ -156,11 +161,44 @@ async function main() {
     data: {
       pacienteId: pProspecto.id,
       usuarioId: admisionista!.id,
-      dia: 'Lunes',
-      solicitanteNombre: 'Elena Rodríguez',
-      relacionPaciente: 'Madre',
+      nombreLlamada: 'Elena Rodríguez',
+      parentescoLlamada: 'Madre',
+      nombrePaciente: 'María Rodríguez Pena',
+      celularLlamada: '3111234567',
+      sustancias: ['CANNABIS', 'TABACO'],
       dispuestoInternarse: 'SI',
-      observaciones: 'Interesada en internamiento voluntario para su hija.',
+      conclusionMedica: 'Interesada en internamiento voluntario. Se programa cita para mañana.',
+      acuerdoSeguimiento: TipoAcuerdoSeguimiento.CITA_PROGRAMADA,
+      fechaAcuerdo: new Date(new Date().getTime() + 24 * 60 * 60 * 1000), // Mañana
+    },
+  });
+
+  // PACIENTE 3: EN VALORACIÓN (Bandeja Médica)
+  const pValoracion = await prisma.paciente.create({
+    data: {
+      nombre: 'Fernando',
+      apellidoPaterno: 'Gómez',
+      apellidoMaterno: 'Arias',
+      fechaNacimiento: new Date('1985-08-12'),
+      sexo: 'M',
+      estado: EstadoPaciente.EN_VALORACION,
+      sustancias: ['Cristal', 'Metanfetaminas'],
+      areaDeseada: AreaCentro.HOMBRES,
+    },
+  });
+
+  await prisma.primerContacto.create({
+    data: {
+      pacienteId: pValoracion.id,
+      usuarioId: admisionista!.id,
+      nombreLlamada: 'Fernando Gómez',
+      parentescoLlamada: 'PACIENTE',
+      nombrePaciente: 'Fernando Gómez Arias',
+      celularLlamada: '3119876543',
+      sustancias: ['CRISTAL'],
+      dispuestoInternarse: 'SI',
+      conclusionMedica: 'Solicita valoración inmediata por crisis de consumo.',
+      acuerdoSeguimiento: TipoAcuerdoSeguimiento.OTRO
     },
   });
 
@@ -185,41 +223,42 @@ async function main() {
     },
   });
 
-  // 6. AGENDA
-  console.log('📅 Programando citas en la agenda...');
+  // 6. AGENDA Y CITAS
+  console.log('📅 Programando citas y seguimiento...');
   await (prisma as any).citaAgenda.create({
     data: {
       pacienteId: pInternado.id,
       especialistaId: medico!.id,
-      fechaHora: new Date(new Date().getTime() + 24 * 60 * 60 * 1000), // Mañana
+      fechaHora: new Date(new Date().getTime() + 48 * 60 * 60 * 1000), // Pasado mañana
       motivo: 'Revisión médica semanal',
     },
   });
   
-  // PACIENTE 3: EGRESADO + REFORZAMIENTO
-  console.log('🎓 Registrando paciente egresado y programa de reforzamiento...');
-  const pEgresado = await (prisma.paciente as any).create({
+  // PACIENTE 4: EGRESADO + REFORZAMIENTO
+  console.log('🎓 Registrando paciente egresado...');
+  const pEgresado = await prisma.paciente.create({
     data: {
+      claveUnica: 'ADM-2025-088',
       nombre: 'Elena',
       apellidoPaterno: 'Luna',
       apellidoMaterno: 'Mora',
       fechaNacimiento: new Date('1988-03-12'),
       sexo: 'F',
-      estado: 'EGRESADO',
+      estado: EstadoPaciente.EGRESADO,
       sustancias: ['Crystal'],
       direccion: 'Col. San Juan, Tepic',
     },
   });
 
-  await (prisma as any).programaReforzamiento.upsert({
+  await prisma.programaReforzamiento.upsert({
     where: { pacienteId: pEgresado.id },
     update: {},
     create: {
       pacienteId: pEgresado.id,
       fechaInicio: new Date(),
-      fechaFinEstimada: new Date(new Date().getTime() + 365 * 24 * 60 * 60 * 1000), // 1 año después
+      fechaFinEstimada: new Date(new Date().getTime() + 365 * 24 * 60 * 60 * 1000), 
       estado: 'ACTIVO',
-      observaciones: 'Paciente inicia programa de seguimiento de un año tras egreso exitoso.',
+      observaciones: 'Paciente en seguimiento post-egreso.',
     },
   });
 

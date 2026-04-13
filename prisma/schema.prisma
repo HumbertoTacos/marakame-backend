@@ -211,6 +211,7 @@ enum TipoAcuerdoSeguimiento {
   POSIBLE_INGRESO
   RECHAZADO
   OTRO
+  CITA_PROGRAMADA
 }
 
 model Sustancia {

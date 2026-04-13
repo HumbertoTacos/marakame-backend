@@ -139,6 +139,56 @@ export const getSustancias = async (req: Request, res: Response) => {
   res.json({ success: true, data: sustancias });
 };
 
+/**
+ * Agendar Cita de Seguimiento (CRM)
+ * PATCH /api/v1/admisiones/primer-contacto/:id/agendar
+ */
+export const agendarCitaProspecto = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { fechaAcuerdo } = req.body;
+
+  if (!fechaAcuerdo) {
+    throw new AppError(400, 'La fecha de la cita es obligatoria');
+  }
+
+  const updated = await prisma.primerContacto.update({
+    where: { id: parseInt(id as string, 10) },
+    data: {
+      acuerdoSeguimiento: 'CITA_PROGRAMADA',
+      fechaAcuerdo: new Date(fechaAcuerdo)
+    }
+  });
+
+  res.json({ success: true, data: updated, message: 'Cita programada exitosamente' });
+};
+
+/**
+ * Solicitar Valoración Médica (Transición a Área Clínica)
+ * PATCH /api/v1/admisiones/paciente/:id/solicitar-valoracion
+ */
+export const solicitarValoracionMedica = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  // 1. Verificar que el paciente existe
+  const paciente = await prisma.paciente.findUnique({
+    where: { id: parseInt(id as string, 10) }
+  });
+
+  if (!paciente) throw new AppError(404, 'Paciente no encontrado');
+
+  // 2. Transicionar estado a EN_VALORACION
+  const updated = await prisma.paciente.update({
+    where: { id: parseInt(id as string, 10) },
+    data: { estado: 'EN_VALORACION' }
+  });
+
+  res.json({ 
+    success: true, 
+    data: updated, 
+    message: 'Paciente enviado a bandeja de Valoración Médica' 
+  });
+};
+
 export const getPrimerContactoById = async (req: Request, res: Response) => {
   const { id } = req.params;
   const contacto = await prisma.primerContacto.findUnique({
