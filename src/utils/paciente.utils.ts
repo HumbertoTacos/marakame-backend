@@ -45,6 +45,11 @@ export const aplicarCapaPrivacidad = (data: any): any => {
     return data.map(item => aplicarCapaPrivacidad(item));
   }
 
+  // Si es una fecha, la devolvemos tal cual para evitar que el spread { ...data } la deje vacía
+  if (data instanceof Date) {
+    return data;
+  }
+
   // Si es un objeto, clonamos y procesamos
   if (typeof data === 'object') {
     // Clonamos el objeto para evitar mutaciones accidentales

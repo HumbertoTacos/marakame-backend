@@ -28,7 +28,8 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
           apellidoMaterno: '',
           fechaNacimiento: fechaNacimientoFinal,
           sexo: 'M',
-          estado: 'PROSPECTO'
+          estado: 'PROSPECTO',
+          sustancias: data.sustancias || []
         }
       });
       pacienteIdToUse = paciente.id;
@@ -94,7 +95,11 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
 };
 
 export const getPrimerContactos = async (req: Request, res: Response) => {
+  const { incluirInactivos } = req.query;
+  const showAll = incluirInactivos === 'true';
+
   const contactos = await prisma.primerContacto.findMany({
+    where: showAll ? {} : { activo: true },
     select: {
       id: true,
       nombreLlamada: true,
@@ -102,7 +107,9 @@ export const getPrimerContactos = async (req: Request, res: Response) => {
       parentescoLlamada: true,
       medioEnterado: true,
       nombrePaciente: true,
+      sustancias: true,
       createdAt: true,
+      activo: true,
       // Acuerdos CRM
       acuerdoSeguimiento: true,
       fechaAcuerdo: true,
@@ -200,7 +207,6 @@ export const getPrimerContactoById = async (req: Request, res: Response) => {
   });
 
   if (!contacto) throw new AppError(404, 'Primer contacto no encontrado');
-
   res.json({ success: true, data: contacto });
 };
 
@@ -211,8 +217,6 @@ export const updatePrimerContacto = async (req: Request, res: Response) => {
   const result = await prisma.primerContacto.update({
     where: { id: parseInt(id as string, 10) },
     data: {
-      // 25-29. Acuerdos
-      acuerdoLlamarle: data.acuerdoLlamarle,
       acuerdoOtro: data.acuerdoOtro,
       acuerdoEsperarLlamada: data.acuerdoEsperarLlamada,
       acuerdoEsperarVisita: data.acuerdoEsperarVisita,
@@ -225,6 +229,21 @@ export const updatePrimerContacto = async (req: Request, res: Response) => {
   });
 
   res.json({ success: true, data: result });
+};
+
+/**
+ * Desactivar (Borrado Lógico) de un Prospecto
+ * PATCH /api/v1/admisiones/primer-contacto/:id/desactivar
+ */
+export const desactivarPrimerContacto = async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  const updated = await prisma.primerContacto.update({
+    where: { id: parseInt(id as string, 10) },
+    data: { activo: false }
+  });
+
+  res.json({ success: true, data: updated, message: 'Prospecto archivado exitosamente' });
 };
 
 export const createValoracionDiagnostica = async (req: Request, res: Response) => {

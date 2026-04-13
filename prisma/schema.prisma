@@ -214,6 +214,12 @@ enum TipoAcuerdoSeguimiento {
   CITA_PROGRAMADA
 }
 
+enum EstadoValoracion {
+  BORRADOR
+  COMPLETADA
+  FIRMADA
+}
+
 model Sustancia {
   id     Int     @id @default(autoincrement())
   nombre String  @unique
@@ -273,7 +279,12 @@ model PrimerContacto {
   medicoValoro            String?           // 30
   conclusionMedica        String?           @db.Text // 31
   
-  // Timestamps y Relaciones
+  // Datos clínicos para herencia a valoración
+  edadInicioConsumo       Int?
+  sintomasReportados      String?           @db.Text
+  
+  // Timestamps, Estado y Relaciones
+  activo                  Boolean           @default(true)
   createdAt               DateTime          @default(now())
   paciente   Paciente    @relation(fields: [pacienteId], references: [id])
   usuario    Usuario     @relation(fields: [usuarioId], references: [id])
@@ -313,23 +324,51 @@ model ValoracionDiagnostica {
 }
 
 model ValoracionMedica {
-  id                  Int      @id @default(autoincrement())
-  pacienteId          Int      @unique
-  paciente            Paciente @relation(fields: [pacienteId], references: [id])
+  id                            Int               @id @default(autoincrement())
+  pacienteId                    Int               @unique
+  paciente                      Paciente          @relation(fields: [pacienteId], references: [id])
   
-  padecimientoActual  String?  @db.Text
-  antecedentes        Json?    // Heredofamiliares, Personales Patológicos, Psiquiátricos
-  signosVitales       Json?    // TA, FC, FR, TEMP, PESO, TALLA
-  exploracionFisica   String?  @db.Text
-  examenMental        Json?    // Aspecto, Psicomotricidad, Afectividad, Ideación
-  diagnosticoCIE10    String?
-  pronostico          String?  @db.Text
-  tratamientoSugerido String?  @db.Text
-  esAptoParaIngreso   Boolean  @default(false)
-  documentoFirmadoUrl String?
+  estado                        EstadoValoracion  @default(BORRADOR)
+  documentoFirmadoUrl           String?
   
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  // Datos de Control de la Valoración
+  residente                     String?
+  tipoValoracion                String?           // PRESENCIAL o TELEFONICA
+  fechaValoracion               DateTime?
+  horaValoracion                String?
+  
+  // Historia Clínica (Captura Extensa)
+  motivoConsulta                String?           @db.Text
+  padecimientoActual             String?           @db.Text
+  sintomasGenerales             String?           @db.Text
+  tratamientosPrevios           String?           @db.Text
+  
+  antecedentesHeredofamiliares  String?           @db.Text
+  antecedentesPatologicos       String?           @db.Text
+  antecedentesNoPatologicos     String?           @db.Text
+  
+  // Historia de Consumo
+  historialConsumo              String?           @db.Text
+  
+  // Exploración Física (Signos Vitales Granulares)
+  tensionArterial               String?
+  frecuenciaCardiaca            String?
+  frecuenciaRespiratoria        String?
+  temperatura                   String?
+  peso                          String?
+  talla                         String?
+  exploracionFisicaDesc         String?           @db.Text
+  
+  // Examen Mental y Conclusión
+  examenMental                  String?           @db.Text
+  impresionDiagnostica           String?           @db.Text
+  pronostico                    String?           @db.Text
+  planTratamiento               String?           @db.Text
+  
+  esAptoParaIngreso             Boolean           @default(false)
+  
+  createdAt                     DateTime          @default(now())
+  updatedAt                     DateTime          @updatedAt
 
   @@map("valoraciones_medicas")
 }

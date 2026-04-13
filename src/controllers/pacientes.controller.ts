@@ -38,12 +38,15 @@ export const getPacientes = async (req: Request, res: Response) => {
       sexo: true,
       fechaNacimiento: true,
       estado: true,
+      sustancias: true,
       createdAt: true,
       primerContacto: {
         select: {
           id: true,
           nombreLlamada: true,
-          parentescoLlamada: true
+          parentescoLlamada: true,
+          edadPaciente: true,
+          sustancias: true
         },
         orderBy: { createdAt: 'desc' },
         take: 1

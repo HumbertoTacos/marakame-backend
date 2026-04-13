@@ -2,13 +2,19 @@ import { Router } from 'express';
 import { authenticate } from '../middlewares/auth';
 import { 
   createPrimerContacto, updatePrimerContacto, getPrimerContactos, getPrimerContactoById, getSustancias,
+  desactivarPrimerContacto,
   agendarCitaProspecto, solicitarValoracionMedica,
   createValoracionDiagnostica, getValoraciones, getValoracionById,
   createIngreso, updateIngreso, getIngresos, getIngresoById,
   // Gestión de Camas y Solicitudes
   getCamas, getSolicitudes, getSolicitudByFolio, createSolicitud, updateEstadoSolicitud, asignarCama
 } from '../controllers/admisiones.controller';
-import { crearValoracionMedica, getValoracionMedicaByPaciente } from '../controllers/valoracionMedica.controller';
+import { 
+  crearValoracionMedica, 
+  getValoracionMedicaByPaciente,
+  preFillValoracionMedica,
+  uploadFirmaValoracionMedica
+} from '../controllers/valoracionMedica.controller';
 import { upsertEstudioSocioeconomico, getEstudioByPaciente } from '../controllers/estudioSocioeconomico.controller';
 import { uploadValoracion } from '../utils/multerConfig';
 
@@ -35,6 +41,7 @@ router.post('/primer-contacto', createPrimerContacto);
 router.get('/primer-contacto', getPrimerContactos);
 router.get('/primer-contacto/:id', getPrimerContactoById);
 router.put('/primer-contacto/:id', updatePrimerContacto);
+router.patch('/primer-contacto/:id/desactivar', desactivarPrimerContacto);
 router.patch('/primer-contacto/:id/agendar', agendarCitaProspecto);
 router.patch('/paciente/:id/solicitar-valoracion', solicitarValoracionMedica);
 
@@ -43,8 +50,10 @@ router.post('/valoracion', createValoracionDiagnostica);
 router.get('/valoracion', getValoraciones);
 router.get('/valoracion/:id', getValoracionById);
 
-// Valoración Médica (Historia Clínica)
-router.post('/valoracion-medica', uploadValoracion.single('archivo'), crearValoracionMedica);
+// Valoración Médica (Historia Clínica Granular)
+router.get('/valoracion-medica/:pacienteId/pre-fill', preFillValoracionMedica);
+router.post('/valoracion-medica', crearValoracionMedica);
+router.post('/valoracion-medica/:id/upload-firma', uploadValoracion.single('archivo'), uploadFirmaValoracionMedica);
 router.get('/valoracion-medica/paciente/:pacienteId', getValoracionMedicaByPaciente);
 
 // Ingreso Wizard
