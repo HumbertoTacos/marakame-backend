@@ -202,6 +202,35 @@ async function main() {
     },
   });
 
+  // 4.1 Valoración Médica (Nueva Estructura) para Fernando
+  console.log('🩺 Generando valoración médica institucional para Fernando...');
+  await prisma.valoracionMedica.create({
+    data: {
+      pacienteId: pValoracion.id,
+      estado: 'BORRADOR',
+      residente: 'Dr. Julián Martínez',
+      tipoValoracion: 'PRESENCIAL',
+      fechaValoracion: new Date(),
+      horaValoracion: '11:45 AM',
+      motivoConsulta: 'Crisis de ansiedad y deseo intenso de consumo (craving). Refiere haber consumido cristal hace 24 horas.',
+      padecimientoActual: 'Paciente masculino que inicia consumo hace 5 años, con incremento notable en los últimos 6 meses. Presenta episodios de paranoia y pérdida de peso significativa.',
+      sintomasGenerales: 'Taquicardia leve, pupilas dilatadas, insomnio de 3 días, irritabilidad extrema.',
+      tratamientosPrevios: 'Anexo por 3 meses en 2024 (sin éxito), terapia psicológica ambulatoria.',
+      tensionArterial: '135/85',
+      frecuenciaCardiaca: '92',
+      frecuenciaRespiratoria: '20',
+      temperatura: '37.1',
+      peso: '68',
+      talla: '1.75',
+      exploracionFisicaDesc: 'Buen estado de hidratación. Mucosas húmedas. Tórax con ruidos respiratorios normales. Abdomen blando, no doloroso.',
+      examenMental: 'Consciente, orientado en 3 esferas. Discurso coherente pero acelerado. Afecto ansioso. No presenta alucinaciones en el momento.',
+      impresionDiagnostica: 'Trastorno por consumo de estimulantes (Metanfetaminas) Grave [F15.2]. Trastorno de ansiedad generalizada inducido por sustancias.',
+      pronostico: 'Reservado a evolución bajo tratamiento residencial.',
+      planTratamiento: 'Ingreso a programa residencial de 3 meses. Manejo farmacológico para control de ansiedad y abstinencia. Terapia cognitivo-conductual.',
+      esAptoParaIngreso: true
+    }
+  });
+
   // 5. FINANZAS
   console.log('💰 Generando movimientos financieros...');
   await (prisma as any).cargoPaciente.create({
