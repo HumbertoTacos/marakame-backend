@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../middlewares/auth';
 import { 
-  createPrimerContacto, updatePrimerContacto, getPrimerContactos, getPrimerContactoById,
+  createPrimerContacto, updatePrimerContacto, getPrimerContactos, getPrimerContactoById, getSustancias,
   createValoracionDiagnostica, getValoraciones, getValoracionById,
   createIngreso, updateIngreso, getIngresos, getIngresoById,
   // Gestión de Camas y Solicitudes
@@ -13,7 +13,10 @@ import { uploadValoracion } from '../utils/multerConfig';
 
 const router = Router();
 
-// Solo autenticados pueden acceder
+// ── Catálogos Públicos (No sensibles) ───────────────────────
+router.get('/sustancias', getSustancias);
+
+// ── Rutas Protegidas (Solo autenticados) ─────────────────────
 router.use(authenticate);
 
 // Gestión de Camas

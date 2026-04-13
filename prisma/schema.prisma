@@ -205,31 +205,75 @@ enum FuenteReferencia {
 }
 
 enum TipoAcuerdoSeguimiento {
-  LLAMARA_PROSPECTO
-  LLAMARA_MARAKAME
-  CITA_PROGRAMADA
+  LLAMARLE
+  ESPERAR_LLAMADA
+  ESPERAR_VISITA
+  POSIBLE_INGRESO
   RECHAZADO
+  OTRO
+}
+
+model Sustancia {
+  id     Int     @id @default(autoincrement())
+  nombre String  @unique
+  activo Boolean @default(true)
+
+  @@map("sustancias")
 }
 
 model PrimerContacto {
   id                      Int               @id @default(autoincrement())
   pacienteId              Int
   usuarioId               Int
+  // 1-3. Generales
   fecha                   DateTime          @default(now())
-  fuenteReferencia        FuenteReferencia?
-  // Datos del solicitante
-  solicitanteNombre       String
-  solicitanteTelefono     String?
-  relacionPaciente        String
-  // Prospecto
-  edad                    Int?
-  sustancias              String[]
-  // Seguimiento
-  acuerdoSeguimiento      TipoAcuerdoSeguimiento?
-  fechaSeguimiento        DateTime?
-  observaciones           String?
+  hora                    String?
+  medioEnterado           String?
+  // 4-9. Datos del Solicitante
+  nombreLlamada           String?           // 4) Nombre
+  lugarLlamada            String?           // 5) Lugar
+  domicilioLlamada        String?           // 6) Dirección
+  telCasaLlamada          String?           // 7) Tel Casa
+  celularLlamada          String?           // 8) Celular
+  ocupacionLlamada        String?           // 9) Ocupación
+  // 10-19. Datos del Prospecto
+  parentescoLlamada       String?           // 10) Relación (Select)
+  parentescoOtro          String?           // 10) Especificar si es OTRO
+  nombrePaciente          String?           // 11) Nombre
+  edadPaciente            Int?              // 12) Edad
+  estadoCivilPaciente     String?           // 13) Edo Civil
+  hijosPaciente           Int?              // 14) Hijos
+  direccionPaciente       String?           // 15) Dirección
+  escolaridadPaciente     String?           // 16) Escolaridad
+  origenPaciente          String?           // 17) Origen
+  telefonoPaciente        String?           // 18) Tel
+  ocupacionPaciente       String?           // 19) Ocupación
+  // 20. Sustancias
+  sustancias              String[]          // Array de nombres del catálogo
+  sustanciasOtros         String[]          // Array dinámico de otros
+  // 21-23. Disposición y Antecedentes
+  dispuestoInternarse     String?           // 21) SI/NO/DUDA
+  realizoIntervencion     String?           // 22) SI/NO
+  conclusionIntervencion  String?           // 22) Conclusión
+  tratamientoPrevio       String?           // 23) SI/NO
+  lugarTratamiento        String?           // 23) Donde
+  // 24. Otros
+  posibilidadesEconomicas String?           // 24) Posibilidades
+  // 25-29. Acuerdos Literales
+  acuerdoLlamarle         Boolean           @default(false) // 25
+  acuerdoOtro             String?           // 26
+  acuerdoEsperarLlamada   Boolean           @default(false) // 27
+  acuerdoEsperarVisita    Boolean           @default(false) // 28
+  acuerdoPosibleIngreso   Boolean           @default(false) // 29
+  // CRM Tracking
+  acuerdoSeguimiento      TipoAcuerdoSeguimiento? @default(ESPERAR_LLAMADA)
+  fechaAcuerdo            DateTime?
+  // 30-31. Cierre Médico
+  medicoValoro            String?           // 30
+  conclusionMedica        String?           @db.Text // 31
+  
+  // Timestamps y Relaciones
   createdAt               DateTime          @default(now())
-
   paciente   Paciente    @relation(fields: [pacienteId], references: [id])
   usuario    Usuario     @relation(fields: [usuarioId], references: [id])
   documentos Documento[]

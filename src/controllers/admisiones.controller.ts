@@ -10,13 +10,9 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
   const result = await prisma.$transaction(async (tx) => {
     // 1. Preparar datos del Paciente (Prospecto)
     const nombreFinal = data.nombrePaciente?.trim() || 'Prospecto Anónimo';
-    const apPaternoFinal = data.apellidoPaterno?.trim() || '';
-    const apMaternoFinal = data.apellidoMaterno?.trim() || '';
     
     // Si no hay fecha de nacimiento, usamos un placeholder (Integridad del modelo maestro)
-    const fechaNacimientoFinal = data.fechaNacimiento 
-      ? new Date(data.fechaNacimiento) 
-      : new Date('1900-01-01');
+    const fechaNacimientoFinal = new Date('1900-01-01');
 
     // 2. Crear o Vincular Paciente (Estado PROSPECTO por defecto)
     let pacienteIdToUse: number;
@@ -24,56 +20,70 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
     if (data.pacienteId) {
       pacienteIdToUse = parseInt(data.pacienteId as string, 10);
     } else {
-      // Intentar vincular por CURP solo si existe
-      const normalizedCurp = data.curp && data.curp.trim() !== '' 
-        ? data.curp.trim().toUpperCase() 
-        : null;
-
-      const pacienteExistente = normalizedCurp 
-        ? await tx.paciente.findUnique({ where: { curp: normalizedCurp } })
-        : null;
-
-      if (pacienteExistente) {
-        pacienteIdToUse = pacienteExistente.id;
-        // Actualizar sustancias si vienen nuevas
-        await tx.paciente.update({
-          where: { id: pacienteExistente.id },
-          data: {
-            sustancias: data.sustancias || pacienteExistente.sustancias,
-          }
-        });
-      } else {
-        // Crear nuevo paciente
-        const paciente = await tx.paciente.create({
-          data: {
-            nombre: nombreFinal,
-            apellidoPaterno: apPaternoFinal,
-            apellidoMaterno: apMaternoFinal,
-            fechaNacimiento: fechaNacimientoFinal,
-            sexo: data.sexo || 'M', // Por defecto Masculino si no viene
-            curp: normalizedCurp,
-            sustancias: data.sustancias || [],
-            estado: 'PROSPECTO'
-          }
-        });
-        pacienteIdToUse = paciente.id;
-      }
+      // Crear nuevo paciente (Simplificado, los datos reales se quedan en PrimerContacto por ahora)
+      const paciente = await tx.paciente.create({
+        data: {
+          nombre: nombreFinal,
+          apellidoPaterno: '',
+          apellidoMaterno: '',
+          fechaNacimiento: fechaNacimientoFinal,
+          sexo: 'M',
+          estado: 'PROSPECTO'
+        }
+      });
+      pacienteIdToUse = paciente.id;
     }
 
-    // 3. Crear el registro de Primer Contacto (Simplificado)
+    // 3. Crear el registro de Primer Contacto (Digitalización Literal 31 Puntos)
     const primerContacto = await tx.primerContacto.create({
       data: {
         pacienteId: pacienteIdToUse,
         usuarioId: usuarioId,
-        fuenteReferencia: data.fuenteReferencia,
-        solicitanteNombre: data.solicitanteNombre,
-        solicitanteTelefono: data.solicitanteTelefono,
-        relacionPaciente: data.relacionPaciente,
-        edad: data.edad ? parseInt(data.edad as string, 10) : null,
+        // 1-3. Generales
+        hora: data.hora,
+        medioEnterado: data.medioEnterado,
+        // 4-9. Datos del Solicitante
+        nombreLlamada: data.nombreLlamada,
+        lugarLlamada: data.lugarLlamada,
+        domicilioLlamada: data.domicilioLlamada,
+        telCasaLlamada: data.telCasaLlamada,
+        celularLlamada: data.celularLlamada,
+        ocupacionLlamada: data.ocupacionLlamada,
+        // 10-19. Datos del Prospecto
+        parentescoLlamada: data.parentescoLlamada,
+        parentescoOtro: data.parentescoOtro,
+        nombrePaciente: nombreFinal,
+        edadPaciente: data.edadPaciente ? parseInt(data.edadPaciente as string, 10) : null,
+        estadoCivilPaciente: data.estadoCivilPaciente,
+        hijosPaciente: data.hijosPaciente ? parseInt(data.hijosPaciente as string, 10) : null,
+        direccionPaciente: data.direccionPaciente,
+        escolaridadPaciente: data.escolaridadPaciente,
+        origenPaciente: data.origenPaciente,
+        telefonoPaciente: data.telefonoPaciente,
+        ocupacionPaciente: data.ocupacionPaciente,
+        // 20. Sustancias
         sustancias: data.sustancias || [],
-        acuerdoSeguimiento: data.acuerdoSeguimiento,
-        fechaSeguimiento: data.fechaSeguimiento ? new Date(data.fechaSeguimiento) : null,
-        observaciones: data.observaciones
+        sustanciasOtros: data.sustanciasOtros || [],
+        // 21-23. Disposición y Antecedentes
+        dispuestoInternarse: data.dispuestoInternarse,
+        realizoIntervencion: data.realizoIntervencion,
+        conclusionIntervencion: data.conclusionIntervencion,
+        tratamientoPrevio: data.tratamientoPrevio,
+        lugarTratamiento: data.lugarTratamiento,
+        // 24. Otros
+        posibilidadesEconomicas: data.posibilidadesEconomicas,
+        // 25-29. Acuerdos Literales
+        acuerdoLlamarle: data.acuerdoLlamarle === true || data.acuerdoLlamarle === 'true',
+        acuerdoOtro: data.acuerdoOtro,
+        acuerdoEsperarLlamada: data.acuerdoEsperarLlamada === true || data.acuerdoEsperarLlamada === 'true',
+        acuerdoEsperarVisita: data.acuerdoEsperarVisita === true || data.acuerdoEsperarVisita === 'true',
+        acuerdoPosibleIngreso: data.acuerdoPosibleIngreso === true || data.acuerdoPosibleIngreso === 'true',
+        // CRM Tracking
+        acuerdoSeguimiento: data.acuerdoSeguimiento || 'ESPERAR_LLAMADA',
+        fechaAcuerdo: data.fechaAcuerdo ? new Date(data.fechaAcuerdo) : null,
+        // 30-31. Cierre Médico
+        medicoValoro: data.medicoValoro,
+        conclusionMedica: data.conclusionMedica,
       }
     });
 
@@ -87,14 +97,20 @@ export const getPrimerContactos = async (req: Request, res: Response) => {
   const contactos = await prisma.primerContacto.findMany({
     select: {
       id: true,
-      solicitanteNombre: true,
-      solicitanteTelefono: true,
-      relacionPaciente: true,
-      dia: true,
-      fuenteReferencia: true,
-      acuerdoSeguimiento: true,
-      fechaSeguimiento: true,
+      nombreLlamada: true,
+      celularLlamada: true,
+      parentescoLlamada: true,
+      medioEnterado: true,
+      nombrePaciente: true,
       createdAt: true,
+      // Acuerdos CRM
+      acuerdoSeguimiento: true,
+      fechaAcuerdo: true,
+      // Acuerdos Literales
+      acuerdoLlamarle: true,
+      acuerdoEsperarLlamada: true,
+      acuerdoEsperarVisita: true,
+      acuerdoPosibleIngreso: true,
       paciente: {
         select: {
           id: true,
@@ -113,6 +129,14 @@ export const getPrimerContactos = async (req: Request, res: Response) => {
 
   const privacyData = aplicarCapaPrivacidad(contactos);
   res.json({ success: true, data: privacyData });
+};
+
+export const getSustancias = async (req: Request, res: Response) => {
+  const sustancias = await prisma.sustancia.findMany({
+    where: { activo: true },
+    orderBy: { nombre: 'asc' }
+  });
+  res.json({ success: true, data: sustancias });
 };
 
 export const getPrimerContactoById = async (req: Request, res: Response) => {
@@ -137,9 +161,16 @@ export const updatePrimerContacto = async (req: Request, res: Response) => {
   const result = await prisma.primerContacto.update({
     where: { id: parseInt(id as string, 10) },
     data: {
-      acuerdoSeguimiento: data.acuerdoSeguimiento,
-      fechaSeguimiento: data.fechaSeguimiento ? new Date(data.fechaSeguimiento) : undefined,
-      observaciones: data.observaciones
+      // 25-29. Acuerdos
+      acuerdoLlamarle: data.acuerdoLlamarle,
+      acuerdoOtro: data.acuerdoOtro,
+      acuerdoEsperarLlamada: data.acuerdoEsperarLlamada,
+      acuerdoEsperarVisita: data.acuerdoEsperarVisita,
+      acuerdoPosibleIngreso: data.acuerdoPosibleIngreso,
+      // Otros campos que podrían editarse
+      posibilidadesEconomicas: data.posibilidadesEconomicas,
+      medicoValoro: data.medicoValoro,
+      conclusionMedica: data.conclusionMedica
     }
   });
 
