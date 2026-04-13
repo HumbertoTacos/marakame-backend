@@ -8,88 +8,72 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
   const usuarioId = req.usuario!.id;
 
   const result = await prisma.$transaction(async (tx) => {
-    // 1. Crear o Vincular Paciente (Estado PROSPECTO por defecto)
+    // 1. Preparar datos del Paciente (Prospecto)
+    const nombreFinal = data.nombrePaciente?.trim() || 'Prospecto Anónimo';
+    const apPaternoFinal = data.apellidoPaterno?.trim() || '';
+    const apMaternoFinal = data.apellidoMaterno?.trim() || '';
+    
+    // Si no hay fecha de nacimiento, usamos un placeholder (Integridad del modelo maestro)
+    const fechaNacimientoFinal = data.fechaNacimiento 
+      ? new Date(data.fechaNacimiento) 
+      : new Date('1900-01-01');
+
+    // 2. Crear o Vincular Paciente (Estado PROSPECTO por defecto)
     let pacienteIdToUse: number;
 
     if (data.pacienteId) {
       pacienteIdToUse = parseInt(data.pacienteId as string, 10);
     } else {
-      // 1.1 Normalización de CURP (Crítico para evitar errores de duplicidad por espacios o strings vacíos)
+      // Intentar vincular por CURP solo si existe
       const normalizedCurp = data.curp && data.curp.trim() !== '' 
         ? data.curp.trim().toUpperCase() 
         : null;
 
-      // 1.2 Buscar si el paciente ya existe (Solo si el CURP no es null)
       const pacienteExistente = normalizedCurp 
         ? await tx.paciente.findUnique({ where: { curp: normalizedCurp } })
         : null;
 
       if (pacienteExistente) {
         pacienteIdToUse = pacienteExistente.id;
-        // Actualizar datos básicos si es necesario para mantener el expediente al día
+        // Actualizar sustancias si vienen nuevas
         await tx.paciente.update({
           where: { id: pacienteExistente.id },
           data: {
-            telefono: data.telefonoPaciente || pacienteExistente.telefono,
-            celular: data.celularPaciente || pacienteExistente.celular,
-            direccion: data.direccionPaciente || pacienteExistente.direccion,
             sustancias: data.sustancias || pacienteExistente.sustancias,
           }
         });
       } else {
-        try {
-          // Crear nuevo paciente (Si el CURP existe es null, Postgres permite múltiples NULLs pero no múltiples "")
-          const paciente = await tx.paciente.create({
-            data: {
-              nombre: data.nombrePaciente,
-              apellidoPaterno: data.apellidoPaterno,
-              apellidoMaterno: data.apellidoMaterno,
-              fechaNacimiento: new Date(data.fechaNacimiento),
-              sexo: data.sexo,
-              curp: normalizedCurp, // Usar el CURP normalizado
-              estadoCivil: data.estadoCivil,
-              hijos: parseInt(data.hijos || '0', 10),
-              escolaridad: data.escolaridad,
-              lugarOrigen: data.lugarOrigen,
-              ocupacion: data.ocupacion,
-              telefono: data.telefonoPaciente,
-              celular: data.celularPaciente,
-              direccion: data.direccionPaciente,
-              sustancias: data.sustancias || [],
-              estado: 'PROSPECTO'
-            }
-          });
-          pacienteIdToUse = paciente.id;
-        } catch (error: any) {
-          if (error.code === 'P2002') {
-            throw new AppError(400, 'El CURP ingresado ya está registrado en el sistema');
+        // Crear nuevo paciente
+        const paciente = await tx.paciente.create({
+          data: {
+            nombre: nombreFinal,
+            apellidoPaterno: apPaternoFinal,
+            apellidoMaterno: apMaternoFinal,
+            fechaNacimiento: fechaNacimientoFinal,
+            sexo: data.sexo || 'M', // Por defecto Masculino si no viene
+            curp: normalizedCurp,
+            sustancias: data.sustancias || [],
+            estado: 'PROSPECTO'
           }
-          throw error;
-        }
+        });
+        pacienteIdToUse = paciente.id;
       }
     }
 
-    // 2. Crear el registro de Primer Contacto
+    // 3. Crear el registro de Primer Contacto (Simplificado)
     const primerContacto = await tx.primerContacto.create({
       data: {
         pacienteId: pacienteIdToUse,
         usuarioId: usuarioId,
-        dia: new Date().toLocaleDateString('es-MX', { weekday: 'long' }),
         fuenteReferencia: data.fuenteReferencia,
         solicitanteNombre: data.solicitanteNombre,
         solicitanteTelefono: data.solicitanteTelefono,
-        solicitanteCelular: data.solicitanteCelular,
-        solicitanteDireccion: data.solicitanteDireccion,
-        solicitanteOcupacion: data.solicitanteOcupacion,
         relacionPaciente: data.relacionPaciente,
-        dispuestoInternarse: data.dispuestoInternarse,
-        requiereIntervencion: data.requiereIntervencion === 'true' || data.requiereIntervencion === true,
-        estadoPrevioTratamiento: data.estadoPrevioTratamiento === 'true' || data.estadoPrevioTratamiento === true,
-        acuerdo: data.acuerdo,
+        edad: data.edad ? parseInt(data.edad as string, 10) : null,
+        sustancias: data.sustancias || [],
         acuerdoSeguimiento: data.acuerdoSeguimiento,
         fechaSeguimiento: data.fechaSeguimiento ? new Date(data.fechaSeguimiento) : null,
-        observaciones: data.observaciones,
-        posibilidadesEconomicas: data.posibilidadesEconomicas,
+        observaciones: data.observaciones
       }
     });
 

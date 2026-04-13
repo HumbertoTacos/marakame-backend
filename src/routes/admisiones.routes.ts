@@ -8,6 +8,7 @@ import {
   getCamas, getSolicitudes, getSolicitudByFolio, createSolicitud, updateEstadoSolicitud, asignarCama
 } from '../controllers/admisiones.controller';
 import { crearValoracionMedica, getValoracionMedicaByPaciente } from '../controllers/valoracionMedica.controller';
+import { upsertEstudioSocioeconomico, getEstudioByPaciente } from '../controllers/estudioSocioeconomico.controller';
 import { uploadValoracion } from '../utils/multerConfig';
 
 const router = Router();
@@ -45,5 +46,9 @@ router.post('/ingreso', createIngreso);
 router.get('/ingreso', getIngresos);
 router.get('/ingreso/:id', getIngresoById);
 router.put('/ingreso/:id', updateIngreso);
+
+// Estudio Socioeconómico (Trabajo Social)
+router.post('/estudio', upsertEstudioSocioeconomico);
+router.get('/estudio/paciente/:pacienteId', getEstudioByPaciente);
 
 export default router;

@@ -216,25 +216,18 @@ model PrimerContacto {
   pacienteId              Int
   usuarioId               Int
   fecha                   DateTime          @default(now())
-  dia                     String
   fuenteReferencia        FuenteReferencia?
-  // Datos del solicitante (pueden diferir del paciente)
+  // Datos del solicitante
   solicitanteNombre       String
   solicitanteTelefono     String?
-  solicitanteCelular      String?
-  solicitanteDireccion    String?
-  solicitanteOcupacion    String?
   relacionPaciente        String
-  // Evaluación
-  dispuestoInternarse     String // SI / NO / DUDA
-  requiereIntervencion    Boolean           @default(false)
-  estadoPrevioTratamiento Boolean           @default(false)
+  // Prospecto
+  edad                    Int?
+  sustancias              String[]
   // Seguimiento
-  acuerdo                 String? // Campo anterior (legacy/observaciones)
   acuerdoSeguimiento      TipoAcuerdoSeguimiento?
   fechaSeguimiento        DateTime?
   observaciones           String?
-  posibilidadesEconomicas String?
   createdAt               DateTime          @default(now())
 
   paciente   Paciente    @relation(fields: [pacienteId], references: [id])
@@ -429,6 +422,16 @@ model EstudioSocioeconomico {
   seccionActual       Int      @default(1)
   completado          Boolean  @default(false)
   datos               Json // Todas las 16 secciones en JSON flexible
+  
+  // Campos obligatorios para lógica institucional y reportes
+  ingresoMensualRango String?
+  numeroHabitacionesRango String?
+  tieneMasDeUnaVivienda Boolean?  @default(false)
+  pisoMaterial        String?
+  murosMaterial       String?
+  techoMaterial       String?
+  totalEgresosCalculado Float?
+
   nivelSocioeconomico String?
   puntajeCalculado    Float?
   createdAt           DateTime @default(now())
