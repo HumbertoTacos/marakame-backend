@@ -103,7 +103,7 @@ enum EstadoDocumentoExpediente {
 model Paciente {
   id              Int            @id @default(autoincrement())
   // Datos básicos
-  claveUnica      String?        @unique // Número cronológico simple
+  claveUnica Int                @unique // Número cronológico simple
   nombre          String
   apellidoPaterno String
   apellidoMaterno String

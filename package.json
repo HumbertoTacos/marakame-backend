@@ -34,7 +34,7 @@
     "@types/multer": "^1.4.12",
     "@types/node": "^22.9.0",
     "@types/pdfkit": "^0.13.4",
-    "prisma": "^5.22.0",
+    "prisma": "^7.7.0",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.6.3"

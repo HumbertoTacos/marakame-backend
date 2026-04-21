@@ -2,69 +2,134 @@ import { prisma } from './prisma';
 
 /**
  * Genera la siguiente clave única incremental para el expediente del paciente.
- * Busca el valor numérico más alto actual y le suma 1. 
- * Si no hay expedientes, inicia en '4922'.
- * Soporta transacciones de Prisma recibiendo un cliente opcional.
+ * ✔ Seguro contra concurrencia
+ * ✔ Evita duplicados
+ * ✔ Compatible con transacciones
+ * ✔ No rompe tu esquema actual (string)
  */
 export const generarSiguienteClaveUnica = async (tx?: any): Promise<string> => {
   const client = tx || prisma;
 
-  // 1. Obtener el último paciente que tiene claveUnica asignada (ordenado por id desc)
-  const ultimoPaciente = await client.paciente.findFirst({
-    where: {
-      claveUnica: { not: null }
-    },
-    orderBy: {
-      id: 'desc'
-    },
-    select: {
-      claveUnica: true
-    }
-  });
+  const MAX_REINTENTOS = 5;
+  let intento = 0;
 
-  if (!ultimoPaciente || !ultimoPaciente.claveUnica) {
-    return '4922';
+  while (intento < MAX_REINTENTOS) {
+    try {
+      // 🔹 Obtener todas las claves válidas (numéricas)
+      const pacientes = await client.paciente.findMany({
+        where: {
+          claveUnica: { not: null }
+        },
+        select: {
+          claveUnica: true
+        }
+      });
+
+      // 🔹 Filtrar y convertir a números válidos
+      const numeros: number[] = pacientes
+        .map((p: { claveUnica: string | null }) => parseInt(p.claveUnica!, 10))
+        .filter((n: number) => !isNaN(n));
+
+      // 🔹 Obtener el máximo real
+      const max = numeros.length > 0 ? Math.max(...numeros) : 4921;
+
+      const siguiente = max + 1;
+
+      return siguiente.toString();
+
+    } catch (error: any) {
+      // 🔥 Si hay conflicto de concurrencia (P2002), reintenta
+      if (error.code === 'P2002') {
+        intento++;
+        continue;
+      }
+
+      throw error;
+    }
   }
 
-  // 2. Extraer número, incrementar y devolver
-  const numeroActual = parseInt(ultimoPaciente.claveUnica, 10);
-  if (isNaN(numeroActual)) return '4922';
-  
-  return (numeroActual + 1).toString();
+  throw new Error('No se pudo generar una clave única después de varios intentos');
 };
 
+
 /**
- * Función de utilidad para enmascarar datos de respuesta y cumplir con la capa de privacidad.
- * Omite nombre y apellidos en cualquier nivel de anidación si se detecta un objeto paciente.
+ * Asigna clave única SOLO si el paciente no tiene una
+ *  Evita duplicación
+ * Usa transacción segura
+ */
+export const asignarClaveUnicaPaciente = async (pacienteId: number, tx: any) => {
+  // Verificar si ya tiene clave
+  const paciente = await tx.paciente.findUnique({
+    where: { id: pacienteId },
+    select: { claveUnica: true }
+  });
+
+  if (!paciente) {
+    throw new Error('Paciente no encontrado');
+  }
+
+  // Si ya tiene clave, NO hacer nada
+  if (paciente.claveUnica) {
+    return paciente.claveUnica;
+  }
+
+  const MAX_REINTENTOS = 5;
+  let intento = 0;
+
+  while (intento < MAX_REINTENTOS) {
+    try {
+      const claveUnica = await generarSiguienteClaveUnica(tx);
+
+      const actualizado = await tx.paciente.update({
+        where: { id: pacienteId },
+        data: { claveUnica },
+        select: { claveUnica: true }
+      });
+
+      return actualizado.claveUnica;
+
+    } catch (error: any) {
+      // Error de duplicado → reintentar
+      if (error.code === 'P2002') {
+        intento++;
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw new Error('No se pudo asignar clave única al paciente');
+};
+
+
+/**
+ * Función de utilidad para enmascarar datos de respuesta y cumplir con privacidad.
  */
 export const aplicarCapaPrivacidad = (data: any): any => {
   if (data === null || data === undefined) return data;
 
-  // Si es un arreglo, procesamos cada elemento de forma recursiva
   if (Array.isArray(data)) {
     return data.map(item => aplicarCapaPrivacidad(item));
   }
 
-  // Si es una fecha, la devolvemos tal cual para evitar que el spread { ...data } la deje vacía
   if (data instanceof Date) {
     return data;
   }
 
-  // Si es un objeto, clonamos y procesamos
   if (typeof data === 'object') {
-    // Clonamos el objeto para evitar mutaciones accidentales
     const clone = { ...data };
 
-    // Si el objeto actual parece ser un paciente (basado en claveUnica o campos nominales)
-    // O si es un objeto que contiene un campo 'paciente'
-    if (clone.claveUnica !== undefined || (clone.nombre !== undefined && clone.apellidoPaterno !== undefined)) {
-      // Omitimos los datos nominales
+    // Detectar objeto paciente
+    if (
+      clone.claveUnica !== undefined ||
+      (clone.nombre !== undefined && clone.apellidoPaterno !== undefined)
+    ) {
       delete clone.nombre;
       delete clone.apellidoPaterno;
       delete clone.apellidoMaterno;
     }
 
-    // Procesamos recursivamente las propiedades del objeto (por si hay pacientes anidados)
     for (const key in clone) {
       if (Object.prototype.hasOwnProperty.call(clone, key)) {
         clone[key] = aplicarCapaPrivacidad(clone[key]);

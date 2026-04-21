@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 import { AppError } from '../middlewares/errorHandler';
-import { generarSiguienteClaveUnica, aplicarCapaPrivacidad } from '../utils/paciente.utils';
+import { aplicarCapaPrivacidad, asignarClaveUnicaPaciente } from '../utils/paciente.utils';
 
 export const createPrimerContacto = async (req: Request, res: Response) => {
   const data = req.body;
@@ -597,30 +597,34 @@ export const getSolicitudByFolio = async (req: Request, res: Response) => {
   res.json({ success: true, data: solicitud });
 };
 
+// ============================================================
+// GESTIÓN DE SOLICITUDES DE INGRESO
+// ============================================================
+
 export const createSolicitud = async (req: Request, res: Response) => {
   const data = req.body;
   const usuarioId = req.usuario!.id;
 
-  // 1. Generar Folio ADM-YYYY-NNN
   const currentYear = new Date().getFullYear();
   const count = await prisma.solicitudIngreso.count({
-    where: {
-      folio: { startsWith: `ADM-${currentYear}` }
-    }
+    where: { folio: { startsWith: `ADM-${currentYear}` } }
   });
+
   const folio = `ADM-${currentYear}-${String(count + 1).padStart(3, '0')}`;
 
   const result = await prisma.$transaction(async (tx) => {
-    // 1.1 Normalización de CURP (Replicando lógica de Primer Contacto)
-    const normalizedCurp = data.curp && data.curp.trim() !== '' 
-      ? data.curp.trim().toUpperCase() 
+    const normalizedCurp = data.curp?.trim()
+      ? data.curp.trim().toUpperCase()
       : null;
 
-    // 2. Buscar o crear paciente
+    // =========================
+    // PACIENTE
+    // =========================
     let paciente;
+
     if (data.pacienteId) {
       paciente = await tx.paciente.update({
-        where: { id: parseInt(data.pacienteId as string, 10) },
+        where: { id: parseInt(data.pacienteId, 10) },
         data: {
           curp: normalizedCurp,
           tipoAdiccion: data.tipoAdiccion,
@@ -645,13 +649,15 @@ export const createSolicitud = async (req: Request, res: Response) => {
         });
       } catch (error: any) {
         if (error.code === 'P2002') {
-          throw new AppError(400, 'El CURP ingresado ya está registrado en el sistema');
+          throw new AppError(400, 'El CURP ya está registrado');
         }
         throw error;
       }
     }
 
-    // 3. Buscar o crear Familiar (Solicitante)
+    // =========================
+    // FAMILIAR
+    // =========================
     let familiar = await tx.familiarResponsable.findUnique({
       where: { pacienteId: paciente.id }
     });
@@ -682,7 +688,9 @@ export const createSolicitud = async (req: Request, res: Response) => {
       });
     }
 
-    // 4. Crear Solicitud
+    // =========================
+    // SOLICITUD
+    // =========================
     const solicitud = await tx.solicitudIngreso.create({
       data: {
         folio,
@@ -691,61 +699,61 @@ export const createSolicitud = async (req: Request, res: Response) => {
         creadoPorId: usuarioId,
         urgencia: data.urgencia || 'BAJA',
         observaciones: data.observaciones,
-        // Si ya viene con cama, la solicitud se aprueba automáticamente
         estado: data.camaId ? 'APROBADA' : 'PENDIENTE'
       }
     });
 
-    // 5. FLUJO EXTRA: Internamiento Formal Inmediato (Si se seleccionó cama)
+    // =========================
+    // INTERNAMIENTO DIRECTO
+    // =========================
     if (data.camaId) {
-      // 5.1 Asignación de Cama
+      const camaId = parseInt(data.camaId, 10);
+
+      // 1. Asignar cama
       await tx.asignacionCama.create({
         data: {
           solicitudId: solicitud.id,
-          camaId: parseInt(data.camaId as string, 10),
+          camaId,
           fechaIngresoEstimada: new Date(),
-          medicoResponsableId: usuarioId, // Por ahora el que lo interna
+          medicoResponsableId: usuarioId,
           medicoResponsableNom: req.usuario?.nombre || 'Administración'
         }
       });
 
-      // 5.2 Ocupar Cama
+      // 2. Ocupar cama
       await tx.cama.update({
-        where: { id: parseInt(data.camaId as string, 10) },
-        data: { 
-          estado: 'OCUPADA', 
-          pacienteId: paciente.id 
-        }
+        where: { id: camaId },
+        data: { estado: 'OCUPADA', pacienteId: paciente.id }
       });
 
-      // 5.3 Formalizar Expediente y Clave Única
-      const claveUnica = await generarSiguienteClaveUnica(tx);
+      // 3. 🔥 CLAVE ÚNICA SEGURA
+      await asignarClaveUnicaPaciente(paciente.id, tx);
+
+      // 4. Estado paciente
       await tx.paciente.update({
         where: { id: paciente.id },
-        data: { 
-          estado: 'INTERNADO',
-          claveUnica: claveUnica
-        }
+        data: { estado: 'INTERNADO' }
       });
 
-      // 5.4 Crear Expediente Clínico
+      // 5. Expediente
       await tx.expediente.upsert({
         where: { pacienteId: paciente.id },
         update: {},
         create: { pacienteId: paciente.id }
       });
 
-      // 5.5 Generar Checklist de 19 Documentos
+      // 6. Documentos
       const docsAdmin = [
-        'Carátula', 'Reglamento general', 'Inventario de pertenencias', 
-        'Hoja de división', 'Hoja de ingreso', 'Aviso de privacidad', 
-        'Políticas', 'Consentimiento', 'Condiciones', 'Formato de info', 
-        'Derechos', 'Reglamento familiar', 'Estudio socioeconómico', 
-        'Convenios', 'Recibos y Gastos'
+        'Carátula','Reglamento general','Inventario de pertenencias',
+        'Hoja de división','Hoja de ingreso','Aviso de privacidad',
+        'Políticas','Consentimiento','Condiciones','Formato de info',
+        'Derechos','Reglamento familiar','Estudio socioeconómico',
+        'Convenios','Recibos y Gastos'
       ];
+
       const docsEval = [
-        'Cuestionario ASSIST', 'Cuestionario de abuso de drogas', 
-        'Escala de dependencia al alcohol', 'Ludopatía'
+        'Cuestionario ASSIST','Cuestionario de abuso de drogas',
+        'Escala de dependencia al alcohol','Ludopatía'
       ];
 
       await tx.documentoExpediente.createMany({
@@ -753,14 +761,14 @@ export const createSolicitud = async (req: Request, res: Response) => {
           ...docsAdmin.map(nombre => ({
             nombre,
             pacienteId: paciente.id,
-            ubicacion: 'LADO_IZQ' as any,
-            estado: 'PENDIENTE' as any
+            ubicacion: 'LADO_IZQ' as const,
+            estado: 'PENDIENTE'
           })),
           ...docsEval.map(nombre => ({
             nombre,
             pacienteId: paciente.id,
-            ubicacion: 'EVALUACIONES' as any,
-            estado: 'PENDIENTE' as any
+            ubicacion: 'EVALUACIONES' as const,
+            estado: 'PENDIENTE'
           }))
         ]
       });
@@ -823,13 +831,11 @@ export const asignarCama = async (req: Request, res: Response) => {
     });
 
     // 5. Actualizar Paciente y Generar Clave Única
-    const claveUnica = await generarSiguienteClaveUnica(tx);
+    // 5.3 Formalizar Expediente y Clave Única
+      await asignarClaveUnicaPaciente(solicitud.pacienteId, tx);
     await tx.paciente.update({
       where: { id: solicitud.pacienteId },
-      data: { 
-        estado: 'INTERNADO',
-        claveUnica: claveUnica
-      }
+      data: { estado: 'INTERNADO' }
     });
 
     // 6. Generar Checklist Automático de Documentos (15 Documentos)
@@ -847,13 +853,13 @@ export const asignarCama = async (req: Request, res: Response) => {
           nombre,
           pacienteId: solicitud.pacienteId,
           ubicacion: 'LADO_IZQ' as const,
-          estado: 'PENDIENTE' as const
+          estado: 'PENDIENTE'
         })),
         ...['Cuestionario ASSIST', 'Cuestionario de abuso de drogas', 'Escala de dependencia al alcohol', 'Ludopatía'].map(nombre => ({
           nombre,
           pacienteId: solicitud.pacienteId,
           ubicacion: 'EVALUACIONES' as const,
-          estado: 'PENDIENTE' as const
+          estado: 'PENDIENTE'
         }))
       ]
     });
