@@ -300,7 +300,13 @@ export const updatePrimerContacto = async (req: Request, res: Response) => {
       acuerdoEsperarLlamada: data.acuerdoEsperarLlamada,
       acuerdoEsperarVisita: data.acuerdoEsperarVisita,
       acuerdoPosibleIngreso: data.acuerdoPosibleIngreso,
-      // Otros campos que podrían editarse
+
+      // 🔥 ESTO FALTABA
+      acuerdoSeguimiento: data.acuerdoSeguimiento,
+      fechaAcuerdo: data.fechaAcuerdo
+        ? new Date(data.fechaAcuerdo)
+        : undefined,
+
       posibilidadesEconomicas: data.posibilidadesEconomicas,
       medicoValoro: data.medicoValoro,
       conclusionMedica: data.conclusionMedica
@@ -832,7 +838,7 @@ export const asignarCama = async (req: Request, res: Response) => {
 
     // 5. Actualizar Paciente y Generar Clave Única
     // 5.3 Formalizar Expediente y Clave Única
-      await asignarClaveUnicaPaciente(solicitud.pacienteId, tx);
+    await asignarClaveUnicaPaciente(solicitud.pacienteId, tx);
     await tx.paciente.update({
       where: { id: solicitud.pacienteId },
       data: { estado: 'INTERNADO' }

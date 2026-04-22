@@ -66,6 +66,11 @@ export const crearValoracionMedica = async (req: Request, res: Response) => {
   const result = await prisma.$transaction(async (tx) => {
     const id = typeof pacienteId === 'string' ? parseInt(pacienteId, 10) : pacienteId;
 
+    const examenMentalTexto =
+      typeof req.body.examenMental === 'object'
+        ? JSON.stringify(req.body.examenMental)
+        : req.body.examenMental || '';
+
     const valoracion = await tx.valoracionMedica.upsert({
       where: { pacienteId: id },
       create: {
@@ -86,7 +91,7 @@ export const crearValoracionMedica = async (req: Request, res: Response) => {
         peso: medicalData.peso,
         talla: medicalData.talla,
         exploracionFisicaDesc: medicalData.exploracionFisicaDesc,
-        examenMental: medicalData.examenMental,
+        examenMental: examenMentalTexto,
         impresionDiagnostica: medicalData.impresionDiagnostica,
         pronostico: medicalData.pronostico,
         planTratamiento: medicalData.planTratamiento,
@@ -114,7 +119,7 @@ export const crearValoracionMedica = async (req: Request, res: Response) => {
         peso: medicalData.peso,
         talla: medicalData.talla,
         exploracionFisicaDesc: medicalData.exploracionFisicaDesc,
-        examenMental: medicalData.examenMental,
+        examenMental: examenMentalTexto,
         impresionDiagnostica: medicalData.impresionDiagnostica,
         pronostico: medicalData.pronostico,
         planTratamiento: medicalData.planTratamiento,
