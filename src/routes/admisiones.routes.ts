@@ -17,6 +17,7 @@ import {
 } from '../controllers/valoracionMedica.controller';
 import { upsertEstudioSocioeconomico, getEstudioByPaciente } from '../controllers/estudioSocioeconomico.controller';
 import { uploadValoracion } from '../utils/multerConfig';
+import inventarioRoutes from './inventarioPertenencias.routes';
 
 const router = Router();
 
@@ -25,6 +26,9 @@ router.get('/sustancias', getSustancias);
 
 // ── Rutas Protegidas (Solo autenticados) ─────────────────────
 router.use(authenticate);
+
+// Inventario de pertenencias
+router.use('/', inventarioRoutes);
 
 // Gestión de Camas
 router.get('/camas', getCamas);

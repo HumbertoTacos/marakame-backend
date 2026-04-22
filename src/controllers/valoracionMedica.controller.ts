@@ -133,10 +133,15 @@ export const crearValoracionMedica = async (req: Request, res: Response) => {
     });
 
     // Si es APTO, actualizamos estado del paciente
-    if (valoracion.esAptoParaIngreso) {
+    if (valoracion.esAptoParaIngreso === true) {
       await tx.paciente.update({
         where: { id: id },
-        data: { estado: 'PENDIENTE_INGRESO' }
+        data: { estado: 'PENDIENTE_INGRESO' } // o como quieras llamarlo
+      });
+    } else {
+      await tx.paciente.update({
+        where: { id: id },
+        data: { estado: 'CANALIZADO' }
       });
     }
 
