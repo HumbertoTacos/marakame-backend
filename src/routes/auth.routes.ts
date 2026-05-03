@@ -9,10 +9,18 @@ import { registrarAuditoria } from '../utils/auditoria';
 
 const router = Router();
 
+// ── Schemas de validación ────────────────────────────────────
+
 const loginSchema = z.object({
   correo: z.string().email('Correo inválido'),
   password: z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
 });
+
+const refreshSchema = z.object({
+  refreshToken: z.string().min(1, 'Refresh token requerido'),
+});
+
+// ── Helpers ──────────────────────────────────────────────────
 
 function generarTokens(payload: { id: number; rol: string; nombre: string }) {
   const accessToken = jwt.sign(payload, process.env.JWT_SECRET!, {
@@ -23,6 +31,8 @@ function generarTokens(payload: { id: number; rol: string; nombre: string }) {
   });
   return { accessToken, refreshToken };
 }
+
+// ── Rutas ────────────────────────────────────────────────────
 
 // POST /api/v1/auth/login
 router.post('/login', async (req, res) => {
@@ -38,7 +48,6 @@ router.post('/login', async (req, res) => {
     throw new AppError(401, 'Credenciales incorrectas.');
   }
 
-  // Actualizar último acceso
   await prisma.usuario.update({
     where: { id: usuario.id },
     data: { ultimoAcceso: new Date() },
@@ -70,8 +79,7 @@ router.post('/login', async (req, res) => {
 
 // POST /api/v1/auth/refresh
 router.post('/refresh', async (req, res) => {
-  const { refreshToken } = req.body;
-  if (!refreshToken) throw new AppError(401, 'Refresh token requerido.');
+  const { refreshToken } = refreshSchema.parse(req.body);
 
   try {
     const payload = jwt.verify(
