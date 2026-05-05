@@ -49,16 +49,16 @@ model Usuario {
   auditoria          Auditoria[]
 
   // Relaciones Clínicas
-  notasEvolucion        NotaEvolucion[]
-  signosTomados         SignoVital[]
+  notasEvolucion       NotaEvolucion[]
+  signosTomados        SignoVital[]
   tratamientosRecetados TratamientoMedico[]
   suministrosAplicados  SuministroTratamiento[]
 
   // Relaciones Financieras y Citas
-  pagosRecibidos  PagoPaciente[]
+  pagosRecibidos PagoPaciente[]
   cargosAplicados CargoPaciente[]
-  citasAsignadas  CitaAgenda[]
-  ingresos        Ingreso[]
+  citasAsignadas CitaAgenda[]
+  ingresos       Ingreso[]
 
   @@map("usuarios")
 }
@@ -130,7 +130,6 @@ model Paciente {
   tratamientosPrevios Boolean    @default(false)
   detallesTratamientos String?   @db.Text
   areaDeseada         AreaCentro?
-  // Sustancias (del primer contacto)
   // Sustancias (del primer contacto)
   sustancias      String[]
   
@@ -449,7 +448,7 @@ model SolicitudIngreso {
 }
 
 model AsignacionCama {
-  id                   Int      @id @default(autoincrement())
+  id                 Int      @id @default(autoincrement())
   fechaIngresoEstimada DateTime
   observaciones        String?  @db.Text
   medicoResponsableId  Int
@@ -829,17 +828,17 @@ model Habitacion {
 }
 
 model Cama {
-  id            Int         @id @default(autoincrement())
-  codigo        String?     @unique // Ej: "H-01", "M-05"
-  numero        String      @unique
-  estado        EstadoCama  @default(DISPONIBLE)
-  descripcion   String?
-  pacienteId    Int?        @unique
-  habitacionId  Int?
+  id           Int         @id @default(autoincrement())
+  codigo       String?     @unique // Ej: "H-01", "M-05"
+  numero       String      @unique
+  estado       EstadoCama  @default(DISPONIBLE)
+  descripcion  String?
+  pacienteId   Int?        @unique
+  habitacionId Int?
   
-  habitacion    Habitacion?  @relation(fields: [habitacionId], references: [id])
-  paciente      Paciente?   @relation(fields: [pacienteId], references: [id])
-  asignaciones  AsignacionCama[]
+  habitacion   Habitacion?  @relation(fields: [habitacionId], references: [id])
+  paciente     Paciente?   @relation(fields: [pacienteId], references: [id])
+  asignaciones AsignacionCama[]
 
   @@map("camas")
 }
@@ -925,19 +924,19 @@ enum EstadoCompra {
 }
 
 model CompraRequisicion {
-  id                  Int          @id @default(autoincrement())
-  folio               String       @unique
-  usuarioId           Int
-  areaSolicitante     String
-  descripcion         String
-  justificacion       String
+  id                 Int          @id @default(autoincrement())
+  folio              String       @unique
+  usuarioId          Int
+  areaSolicitante    String
+  descripcion        String
+  justificacion      String
   presupuestoEstimado Float?
-  estado              EstadoCompra @default(BORRADOR)
-  usuarioAutorizaId   Int?
-  observacionesVoBo   String?
-  fechaAutorizacion   DateTime?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  estado             EstadoCompra @default(BORRADOR)
+  usuarioAutorizaId  Int?
+  observacionesVoBo  String?
+  fechaAutorizacion  DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
   usuario      Usuario            @relation(fields: [usuarioId], references: [id])
   cotizaciones CompraCotizacion[]
@@ -975,62 +974,113 @@ model CompraOrden {
 }
 
 // ============================================================
-// NÓMINAS
+// NÓMINAS Y RECURSOS HUMANOS (CORREGIDO SEGÚN MANUAL)
 // ============================================================
+
+enum RegimenLaboral {
+  CONFIANZA
+  LISTA_RAYA
+}
 
 enum EstadoNomina {
   BORRADOR
-  PENDIENTE
+  PRE_NOMINA
+  SOLICITUD_SUBSIDIO
+  EN_REVISION
   AUTORIZADO
   PAGADO
 }
 
-model Empleado {
-  id           Int       @id @default(autoincrement())
-  nombre       String
-  apellidos    String
-  puesto       String
-  departamento String
-  salarioBase  Float
-  activo       Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+enum TipoIncidencia {
+  INASISTENCIA
+  RETARDO
+  SALIDA_ANTICIPADA
+  FALTA_JUSTIFICADA
+}
 
-  prenominas PreNomina[]
+model Empleado {
+  id               Int            @id @default(autoincrement())
+  nombre           String
+  apellidos        String
+  puesto           String
+  departamento     String
+  regimen          RegimenLaboral @default(CONFIANZA)
+  salarioBase      Float
+  compensacionFija Float?         @default(0)
+  activo           Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  prenominas       PreNomina[]
+  incidencias      IncidenciaNomina[]
 
   @@map("empleados")
 }
 
-model Nomina {
-  id                Int          @id @default(autoincrement())
-  folio             String       @unique
-  periodo           String // Ej: "Primera Quincena Marzo 2024"
-  fechaInicio       DateTime
-  fechaFin          DateTime
-  estado            EstadoNomina @default(BORRADOR)
-  usuarioAutorizaId Int?
-  fechaAutorizacion DateTime?
-  totalGeneral      Float?       @default(0)
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+model IncidenciaNomina {
+  id                 Int            @id @default(autoincrement())
+  empleadoId         Int
+  fecha              DateTime
+  tipo               TipoIncidencia
+  minutosRetardo     Int?
+  justificada        Boolean        @default(false)
+  vistoBuenoJefe     Boolean        @default(false)
+  documentoJustifUrl String?
+  descuentoAplicar   Float          @default(0)
+  aplicadoEnNominaId Int?
+  createdAt          DateTime       @default(now())
 
-  usuarioAutoriza Usuario?    @relation(fields: [usuarioAutorizaId], references: [id])
-  prenominas      PreNomina[]
+  empleado           Empleado       @relation(fields: [empleadoId], references: [id])
+
+  @@map("incidencias_nomina")
+}
+
+model Nomina {
+  id                     Int          @id @default(autoincrement())
+  folio                  String       @unique
+  periodo                String
+  fechaInicio            DateTime
+  fechaFin               DateTime
+  estado                 EstadoNomina @default(BORRADOR)
+  usuarioAutorizaId      Int?
+  fechaAutorizacion      DateTime?
+  firmaRecursosHumanos   Boolean      @default(false)
+  firmaFinanzas          Boolean      @default(false)
+  firmaAdministracion    Boolean      @default(false)
+  firmaDireccion         Boolean      @default(false)
+  fechaSolicitudSubsidio DateTime?
+  fechaRecepcionRecurso  DateTime?
+  totalPercepciones      Float?       @default(0)
+  totalDeducciones       Float?       @default(0)
+  totalNetoPagar         Float?       @default(0)
+  totalGeneral           Float?       @default(0)
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  usuarioAutoriza        Usuario?     @relation(fields: [usuarioAutorizaId], references: [id])
+  prenominas             PreNomina[]
 
   @@map("nominas")
 }
 
 model PreNomina {
-  id             Int   @id @default(autoincrement())
-  nominaId       Int
-  empleadoId     Int
-  diasTrabajados Float @default(15)
-  horasExtra     Float @default(0)
-  salarioBase    Float
-  bonos          Float @default(0)
-  deducciones    Float @default(0)
-  totalAPagar    Float
-  incidencias    String? @db.Text
+  id                   Int      @id @default(autoincrement())
+  nominaId             Int
+  empleadoId           Int
+  diasTrabajados       Float    @default(15)
+  horasExtra           Float    @default(0)
+  sueldoBruto          Float
+  compensacion         Float    @default(0)
+  otrasPercepciones    Float    @default(0)
+  totalPercepciones    Float
+  retencionISR         Float    @default(0)
+  descuentoIncidencias Float    @default(0)
+  otrasDeducciones     Float    @default(0)
+  totalDeducciones     Float
+  totalAPagar          Float
+  incidencias          String?  @db.Text
+  reciboFirmado        Boolean  @default(false)
+  urlReciboFirmado     String?
 
   nomina   Nomina   @relation(fields: [nominaId], references: [id])
   empleado Empleado @relation(fields: [empleadoId], references: [id])

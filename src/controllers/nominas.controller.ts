@@ -7,14 +7,18 @@ import { AppError } from '../middlewares/errorHandler';
 // ============================================================
 
 export const createEmpleado = async (req: Request, res: Response) => {
-  const { nombre, apellidos, puesto, departamento, salarioBase } = req.body;
+  const { numeroEmpleado, nombre, apellidos, puesto, departamento, regimen, salarioBase, compensacionFija } = req.body;
+  
   const empleado = await prisma.empleado.create({
     data: {
+      numeroEmpleado,
       nombre,
       apellidos,
       puesto,
       departamento,
-      salarioBase: parseFloat(salarioBase)
+      regimen: regimen || 'CONFIANZA',
+      salarioBase: parseFloat(salarioBase),
+      compensacionFija: parseFloat(compensacionFija || 0)
     }
   });
   res.status(201).json({ success: true, data: empleado });
@@ -50,34 +54,71 @@ export const generarNomina = async (req: Request, res: Response) => {
       periodo,
       fechaInicio: new Date(fechaInicio),
       fechaFin: new Date(fechaFin),
-      estado: 'BORRADOR'
+      estado: 'PRE_NOMINA' // Iniciamos en estado PRE_NOMINA
     }
   });
 
   // 2. Traer todos los empleados activos
   const empleadosActivos = await prisma.empleado.findMany({ where: { activo: true } });
 
-  // 3. Generar pre-nóminas (cálculos en cero por defecto, asumiendo 15 días o parametrizar)
+  // 3. Generar pre-nóminas (Cálculos iniciales guiados por el manual)
+  let globalPercepciones = 0;
+  let globalDeducciones = 0;
+  let globalNeto = 0;
+
   const preNominas = empleadosActivos.map(emp => {
-    // Calculo básico. Suponemos que laboró la quincena entera, pero esto se ajusta en updatePreNomina
-    const salarioBase = emp.salarioBase; 
+    // Percepciones
+    const sueldoBruto = emp.salarioBase;
+    const compensacion = emp.compensacionFija || 0;
+    const totalPercepciones = sueldoBruto + compensacion;
+    
+    // Deducciones (Simulación de ISR base al 8%)
+    const retencionISR = sueldoBruto * 0.08; 
+    const descuentoIncidencias = 0;
+    const totalDeducciones = retencionISR + descuentoIncidencias;
+
+    // Neto
+    const totalAPagar = totalPercepciones - totalDeducciones;
+
+    // Sumamos a los totales globales de la quincena
+    globalPercepciones += totalPercepciones;
+    globalDeducciones += totalDeducciones;
+    globalNeto += totalAPagar;
+
     return {
       nominaId: nomina.id,
       empleadoId: emp.id,
       diasTrabajados: 15,
-      salarioBase: salarioBase,
-      bonos: 0,
-      deducciones: 0,
-      totalAPagar: salarioBase
+      horasExtra: 0,
+      sueldoBruto,
+      compensacion,
+      otrasPercepciones: 0,
+      totalPercepciones,
+      retencionISR,
+      descuentoIncidencias,
+      otrasDeducciones: 0,
+      totalDeducciones,
+      totalAPagar,
+      incidencias: null,
+      reciboFirmado: false
     };
   });
 
-  await prisma.preNomina.createMany({
-    data: preNominas
-  });
+  // 4. Insertar todos los cálculos de los trabajadores
+  if (preNominas.length > 0) {
+    await prisma.preNomina.createMany({
+      data: preNominas
+    });
+  }
 
-  const nominaGenerada = await prisma.nomina.findUnique({
+  // 5. Actualizar la nómina principal con los totales calculados
+  const nominaGenerada = await prisma.nomina.update({
     where: { id: nomina.id },
+    data: {
+      totalPercepciones: globalPercepciones,
+      totalDeducciones: globalDeducciones,
+      totalNetoPagar: globalNeto
+    },
     include: { prenominas: { include: { empleado: true } } }
   });
 
@@ -100,12 +141,10 @@ export const autorizarNomina = async (req: Request, res: Response) => {
   const usuarioId = req.usuario!.id;
 
   const nominaBase = await prisma.nomina.findUnique({ 
-    where: { id: parseInt(id as string, 10) }, 
-    include: { prenominas: true } 
+    where: { id: parseInt(id as string, 10) }
   });
+  
   if (!nominaBase) throw new AppError(404, 'Nómina no encontrada');
-
-  const totalGeneral = nominaBase.prenominas.reduce((acc, curr) => acc + curr.totalAPagar, 0);
 
   const nomina = await prisma.nomina.update({
     where: { id: parseInt(id as string, 10) },
@@ -113,7 +152,6 @@ export const autorizarNomina = async (req: Request, res: Response) => {
       estado: 'AUTORIZADO',
       usuarioAutorizaId: usuarioId,
       fechaAutorizacion: new Date(),
-      totalGeneral
     }
   });
 
@@ -121,31 +159,55 @@ export const autorizarNomina = async (req: Request, res: Response) => {
 };
 
 // ============================================================
-// PRE-NÓMINAS (Cálculos por empleado)
+// PRE-NÓMINAS (Cálculos individuales por empleado)
 // ============================================================
 
 export const updatePreNomina = async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { diasTrabajados, horasExtra, bonos, deducciones, incidencias } = req.body;
+  const { 
+    diasTrabajados, horasExtra, 
+    otrasPercepciones, 
+    descuentoIncidencias, otrasDeducciones, 
+    incidencias, reciboFirmado 
+  } = req.body;
 
   const preNomina = await prisma.preNomina.findUnique({ where: { id: parseInt(id as string, 10) } });
   if (!preNomina) throw new AppError(404, 'Pre-Nómina no encontrada');
 
-  // Recalcular
-  const baseReducida = (preNomina.salarioBase / 15) * parseFloat(diasTrabajados || preNomina.diasTrabajados);
-  const nuevoTotal = baseReducida + parseFloat(bonos || 0) - parseFloat(deducciones || 0);
+  // Valores a actualizar (si no vienen en la petición, conservamos los anteriores)
+  const newDias = diasTrabajados !== undefined ? parseFloat(diasTrabajados) : preNomina.diasTrabajados;
+  const newOtrasPerc = otrasPercepciones !== undefined ? parseFloat(otrasPercepciones) : preNomina.otrasPercepciones;
+  const newDescuentosInc = descuentoIncidencias !== undefined ? parseFloat(descuentoIncidencias) : preNomina.descuentoIncidencias;
+  const newOtrasDeduc = otrasDeducciones !== undefined ? parseFloat(otrasDeducciones) : preNomina.otrasDeducciones;
+
+  // RECALCULAR
+  // Si trabajó menos días, su sueldo bruto se prorratea
+  const baseReducida = (preNomina.sueldoBruto / 15) * newDias;
+  
+  const totalPercepciones = baseReducida + preNomina.compensacion + newOtrasPerc;
+  
+  // El ISR se mantiene igual al cálculo base o podrías recalcularlo proporcionalmente
+  const totalDeducciones = preNomina.retencionISR + newDescuentosInc + newOtrasDeduc;
+
+  const nuevoTotal = totalPercepciones - totalDeducciones;
 
   const preUpdate = await prisma.preNomina.update({
     where: { id: parseInt(id as string, 10) },
     data: {
-      diasTrabajados: parseFloat(diasTrabajados || preNomina.diasTrabajados),
-      horasExtra: parseFloat(horasExtra || 0),
-      bonos: parseFloat(bonos || 0),
-      deducciones: parseFloat(deducciones || 0),
-      incidencias: incidencias || preNomina.incidencias,
-      totalAPagar: nuevoTotal
+      diasTrabajados: newDias,
+      horasExtra: horasExtra !== undefined ? parseFloat(horasExtra) : preNomina.horasExtra,
+      otrasPercepciones: newOtrasPerc,
+      totalPercepciones,
+      descuentoIncidencias: newDescuentosInc,
+      otrasDeducciones: newOtrasDeduc,
+      totalDeducciones,
+      totalAPagar: nuevoTotal,
+      incidencias: incidencias !== undefined ? incidencias : preNomina.incidencias,
+      reciboFirmado: reciboFirmado !== undefined ? reciboFirmado : preNomina.reciboFirmado
     }
   });
 
+  // Opcional: Podrías llamar aquí a un servicio para actualizar el totalGeneral de la Nomina Padre
+  
   res.json({ success: true, data: preUpdate });
 };

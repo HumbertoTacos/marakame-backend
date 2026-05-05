@@ -1,4 +1,14 @@
-import { PrismaClient, EstadoCama, AreaCentro, Rol, EstadoPaciente, TipoAcuerdoSeguimiento } from '@prisma/client';
+import { 
+  PrismaClient, 
+  EstadoCama, 
+  AreaCentro, 
+  Rol, 
+  EstadoPaciente, 
+  TipoAcuerdoSeguimiento, 
+  EstadoNomina,
+  RegimenLaboral,     
+  TipoIncidencia      
+} from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -30,6 +40,7 @@ async function main() {
     });
   }
 
+  const admin = await prisma.usuario.findUnique({ where: { correo: 'admin@marakame.com' } });
   const medico = await prisma.usuario.findUnique({ where: { correo: 'medico@marakame.com' } });
   const enfermero = await prisma.usuario.findUnique({ where: { correo: 'enfermeria@marakame.com' } });
   const admisionista = await prisma.usuario.findUnique({ where: { correo: 'admisiones@marakame.com' } });
@@ -100,11 +111,12 @@ async function main() {
   console.log('🏥 Registrando pacientes y expedientes clínicos (Muestra Completa)...');
   
   // PACIENTE 1: INTERNADO (Flujo Completo)
-  let pInternado = await prisma.paciente.findUnique({ where: { claveUnica: 'ADM-2026-001' } });
+  // NOTA: Mantenemos el error intencional tuyo de String vs Int en claveUnica (ADM-2026-001) si es que tu schema permite Int y fallaba aquí, te lo dejé igual que el tuyo.
+  let pInternado = await prisma.paciente.findUnique({ where: { claveUnica: 1 } });
   if (!pInternado) {
     pInternado = await prisma.paciente.create({
       data: {
-        claveUnica: 'ADM-2026-001',
+        claveUnica: 1, // Nota: En tu Prisma Schema enviaste "claveUnica Int", ajusté a 1 para que tu Seed corra sin crashear.
         nombre: 'Carlos',
         apellidoPaterno: 'Jiménez',
         apellidoMaterno: 'Sosa',
@@ -165,6 +177,7 @@ async function main() {
   if (!pProspecto) {
     pProspecto = await prisma.paciente.create({
       data: {
+        claveUnica: 2,
         nombre: 'María',
         apellidoPaterno: 'Rodríguez',
         apellidoMaterno: 'Pena',
@@ -198,6 +211,7 @@ async function main() {
   if (!pValoracion) {
     pValoracion = await prisma.paciente.create({
       data: {
+        claveUnica: 3,
         nombre: 'Fernando',
         apellidoPaterno: 'Gómez',
         apellidoMaterno: 'Arias',
@@ -285,14 +299,14 @@ async function main() {
       motivo: 'Revisión médica semanal',
     },
   });
-  
+
   // PACIENTE 4: EGRESADO + REFORZAMIENTO
   console.log('🎓 Registrando paciente egresado...');
-  let pEgresado = await prisma.paciente.findUnique({ where: { claveUnica: 'ADM-2025-088' } });
+  let pEgresado = await prisma.paciente.findUnique({ where: { claveUnica: 88 } });
   if (!pEgresado) {
     pEgresado = await prisma.paciente.create({
       data: {
-        claveUnica: 'ADM-2025-088',
+        claveUnica: 88,
         nombre: 'Elena',
         apellidoPaterno: 'Luna',
         apellidoMaterno: 'Mora',
@@ -315,6 +329,76 @@ async function main() {
       estado: 'ACTIVO',
       observaciones: 'Paciente en seguimiento post-egreso.',
     },
+  });
+
+  // ==========================================================
+  // 7. NÓMINAS Y EMPLEADOS
+  // ==========================================================
+  console.log('💵 Generando empleados y nóminas de prueba...');
+  
+  const empleadosData = [
+    { nombre: 'Pedro', apellidos: 'Martínez', puesto: 'Guardia de Seguridad', departamento: 'Mantenimiento', regimen: RegimenLaboral.CONFIANZA, salarioBase: 4000, compensacionFija: 500 },
+    { nombre: 'Lucía', apellidos: 'Fernández', puesto: 'Cocinera', departamento: 'Cocina', regimen: RegimenLaboral.LISTA_RAYA, salarioBase: 4500, compensacionFija: 0 },
+    { nombre: 'Miguel', apellidos: 'Torres', puesto: 'Chofer', departamento: 'Logística', regimen: RegimenLaboral.CONFIANZA, salarioBase: 3800, compensacionFija: 0 },
+  ];
+
+  const empleadosCreados = [];
+  for (const emp of empleadosData) {
+    const empleadoBD = await prisma.empleado.create({ data: emp });
+    empleadosCreados.push(empleadoBD);
+  }
+
+  // Crear una nómina autorizada por el administrador general
+  let totalNomina = 0;
+  const nominaPrueba = await prisma.nomina.create({
+    data: {
+      folio: 'NOM-2026-05-01',
+      periodo: 'Primera Quincena Mayo 2026',
+      fechaInicio: new Date('2026-05-01'),
+      fechaFin: new Date('2026-05-15'),
+      estado: EstadoNomina.AUTORIZADO,
+      usuarioAutorizaId: admin!.id,
+      fechaAutorizacion: new Date(),
+    }
+  });
+
+  // Crear las prenóminas (recibos) para cada empleado
+  for (const emp of empleadosCreados) {
+    const sueldoBruto = emp.salarioBase;
+    const compensacion = emp.compensacionFija || 0;
+    const totalPercepciones = sueldoBruto + compensacion;
+    
+    // Simular retención ISR básica (8%)
+    const retencionISR = sueldoBruto * 0.08;
+    const descuentoIncidencias = 0; // Sin faltas en este ejemplo
+    const totalDeducciones = retencionISR + descuentoIncidencias;
+    
+    const totalAPagar = totalPercepciones - totalDeducciones;
+    
+    totalNomina += totalAPagar;
+
+    await prisma.preNomina.create({
+      data: {
+        nominaId: nominaPrueba.id,
+        empleadoId: emp.id,
+        diasTrabajados: 15,
+        horasExtra: 0,
+        sueldoBruto,
+        compensacion,
+        totalPercepciones,
+        retencionISR,
+        descuentoIncidencias,
+        totalDeducciones,
+        totalAPagar,
+        incidencias: null,
+      }
+    });
+  }
+
+  // Actualizar el total general de la nómina
+  await prisma.nomina.update({
+    where: { id: nominaPrueba.id },
+    data: { totalGeneral: totalNomina }
   });
 
   console.log('✅ Seed completado con éxito 🚀');
