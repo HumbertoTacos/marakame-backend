@@ -1,10 +1,17 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
+import { 
+  EstadoPaciente,
+  EstadoIngreso,
+  EstadoStock,
+  EstadoCompra,
+  EstadoNomina
+} from '@prisma/client';
 
 export const getDashboardStats = async (req: Request, res: Response) => {
   // 1. Ocupación de Camas
   const pacientesInternados = await prisma.paciente.count({
-    where: { estado: 'INTERNADO' }
+    where: { estado: EstadoPaciente.INTERNADO }
   });
   const capacidadTotal = 80;
   const ocupacionPorcentaje = ((pacientesInternados / capacidadTotal) * 100).toFixed(1);
@@ -17,26 +24,28 @@ export const getDashboardStats = async (req: Request, res: Response) => {
   manana.setDate(manana.getDate() + 1);
 
   const ingresosEnProceso = await prisma.ingreso.count({
-    where: { estado: 'EN_PROCESO' }
+    where: { estado: EstadoIngreso.EN_PROCESO }
   });
 
   // Inventario en riesgo
   const productosCriticos = await prisma.almacenProducto.count({
-    where: { estadoStock: 'CRITICO' }
+    where: { estadoStock: EstadoStock.CRITICO }
   });
 
   const productosBajos = await prisma.almacenProducto.count({
-    where: { estadoStock: 'BAJO' }
+    where: { estadoStock: EstadoStock.BAJO }
   });
 
   // Requisiciones pendientes de autorización
   const comprasPendientes = await prisma.compraRequisicion.count({
-    where: { estado: 'PENDIENTE_AUTORIZACION' }
+    where: {
+      estado: EstadoCompra.EN_AUTORIZACION_DIRECCION
+    }
   });
 
   // Nóminas en Borrador
   const nominasPendientes = await prisma.nomina.count({
-    where: { estado: 'BORRADOR' }
+    where: { estado: EstadoNomina.BORRADOR }
   });
 
   res.json({
