@@ -15,8 +15,8 @@ import {
   preFillValoracionMedica,
   uploadFirmaValoracionMedica
 } from '../controllers/valoracionMedica.controller';
-import { upsertEstudioSocioeconomico, getEstudioByPaciente } from '../controllers/estudioSocioeconomico.controller';
-import { uploadValoracion } from '../utils/multerConfig';
+import { upsertEstudioSocioeconomico, getEstudioByPaciente, uploadFotoEstudio } from '../controllers/estudioSocioeconomico.controller';
+import { uploadValoracion, uploadExpediente } from '../utils/multerConfig';
 
 const router = Router();
 
@@ -66,6 +66,7 @@ router.put('/ingreso/:id', updateIngreso);
 
 // Estudio Socioeconómico (Trabajo Social)
 router.post('/estudio', upsertEstudioSocioeconomico);
+router.post('/estudio/upload-foto', uploadExpediente.single('foto'), uploadFotoEstudio);
 router.get('/estudio/paciente/:pacienteId', getEstudioByPaciente);
 
 export default router;

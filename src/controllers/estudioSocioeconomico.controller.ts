@@ -96,3 +96,17 @@ function calcularNivelPreliminar(egresos: number): string {
   if (egresos > 5000) return 'C (Medio)';
   return 'D (Bajo)';
 }
+
+/**
+ * Sube la foto del aportador del tratamiento y devuelve la URL.
+ */
+export const uploadFotoEstudio = async (req: Request, res: Response) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, error: 'No se subió ningún archivo' });
+  }
+
+  // La URL relativa que el frontend usará para mostrar y guardar la imagen
+  const fileUrl = `/uploads/expedientes/${req.file.filename}`;
+
+  res.json({ success: true, data: { url: fileUrl } });
+};
