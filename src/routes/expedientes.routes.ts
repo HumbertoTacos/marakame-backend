@@ -23,8 +23,14 @@ router.get('/paciente/:pacienteId', async (req: Request, res: Response) => {
   const { pacienteId } = req.params;
   const expediente = await prisma.expediente.findUnique({
     where: { pacienteId: parseInt(pacienteId as string, 10) },
-    include: { 
-      paciente: true,
+    include: {
+      paciente: {
+        include: {
+          cama: {
+            include: { habitacion: true }
+          }
+        }
+      },
       notasEvolucion: {
         include: { usuario: true },
         orderBy: { fecha: 'desc' }
