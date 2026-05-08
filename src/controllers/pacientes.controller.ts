@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 import { AppError } from '../middlewares/errorHandler';
-import { EstadoPaciente } from '@prisma/client';
+import { EstadoPaciente, EstadoCama } from '@prisma/client';
 
 /**
  * Obtener lista de pacientes filtrada por estado
@@ -65,6 +65,9 @@ export const getPacientes = async (req: Request, res: Response) => {
           esAptoParaIngreso: true,
           createdAt: true
         }
+      },
+      expediente: {
+        select: { id: true }
       }
     },
     orderBy: { createdAt: 'desc' }
@@ -158,6 +161,43 @@ export const getAprobadosParaIngreso = async (_req: Request, res: Response) => {
     success: true,
     data: mappedPacientes
   });
+};
+
+/**
+ * Enviar paciente a Desintoxicación
+ * PATCH /api/v1/pacientes/:id/detox
+ * Cambia estado a DETOX y libera la cama actual
+ */
+export const enviarADetox = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const pacienteId = parseInt(id, 10);
+
+  const paciente = await prisma.$transaction(async (tx) => {
+    await tx.cama.updateMany({
+      where: { pacienteId },
+      data: { pacienteId: null, estado: EstadoCama.DISPONIBLE },
+    });
+
+    return tx.paciente.update({
+      where: { id: pacienteId },
+      data: { estado: EstadoPaciente.DETOX },
+    });
+  });
+
+  res.json({ success: true, data: paciente });
+};
+
+/**
+ * Borrado lógico — establece deletedAt para archivar el registro
+ * PATCH /api/v1/pacientes/:id/archivar
+ */
+export const archivarPaciente = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const paciente = await prisma.paciente.update({
+    where: { id: parseInt(id, 10) },
+    data: { deletedAt: new Date() }
+  });
+  res.json({ success: true, data: paciente });
 };
 
 /**

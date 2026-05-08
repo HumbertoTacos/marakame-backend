@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import { logger } from './utils/logger';
 import { errorHandler } from './middlewares/errorHandler';
 import { requestLogger } from './middlewares/requestLogger';
+import { auditMiddleware } from './middlewares/auditMiddleware';
 
 // Rutas
 import authRoutes from './routes/auth.routes';
@@ -21,9 +22,12 @@ import bitacoraRoutes from './routes/bitacora.routes';
 import reportesRoutes from './routes/reportes.routes';
 import usuariosRoutes from './routes/usuarios.routes';
 import dashboardRoutes from './routes/dashboard.routes';
+import actividadesRoutes from './routes/actividades.routes';
 import clinicaRoutes from './routes/clinica.routes';
+import inventarioRoutes from './routes/inventario.routes';
 import egresoRoutes from './routes/egreso.routes';
 import contraReciboRoutes from './routes/contraRecibo.routes';
+import notificacionesRoutes from './routes/notificaciones.routes';
 
 dotenv.config();
 
@@ -46,6 +50,9 @@ app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 // ── Rutas de la API ─────────────────────────────────────────
 const API = '/api/v1';
 
+// Auditoría automática — intercepta todos los POST/PUT/PATCH/DELETE
+app.use(API, auditMiddleware);
+
 app.use(`${API}/auth`,       authRoutes);
 app.use(`${API}/usuarios`,   usuariosRoutes);
 app.use(`${API}/dashboard`,  dashboardRoutes);
@@ -58,9 +65,12 @@ app.use(`${API}/compras`,    comprasRoutes);
 app.use(`${API}/nominas`,    nominasRoutes);
 app.use(`${API}/documentos`, documentosRoutes);
 app.use(`${API}/bitacora`,   bitacoraRoutes);
-app.use(`${API}/reportes`,   reportesRoutes);
-app.use(`${API}/clinica`,    clinicaRoutes);
-app.use(`${API}/egreso`,     egresoRoutes);
+app.use(`${API}/reportes`,       reportesRoutes);
+app.use(`${API}/actividades`,    actividadesRoutes);
+app.use(`${API}/clinica`,        clinicaRoutes);
+app.use(`${API}/inventario`,     inventarioRoutes);
+app.use(`${API}/egreso`,         egresoRoutes);
+app.use(`${API}/notificaciones`, notificacionesRoutes);
 
 // Health check (indicador de red local)
 app.get('/health', (_req, res) => {

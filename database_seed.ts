@@ -30,6 +30,7 @@ async function main() {
     { correo: 'nutricion@marakame.com', nombre: 'Cecilia', apellidos: 'Ríos', rol: Rol.NUTRICION },
     { correo: 'finanzas@marakame.com', nombre: 'Ricardo', apellidos: 'Contador', rol: Rol.RRHH_FINANZAS },
     { correo: 'almacen@marakame.com', nombre: 'Pablo', apellidos: 'Logística', rol: Rol.ALMACEN },
+    { correo: 'jefemedico@marakame.com', nombre: 'Dr. Carlos', apellidos: 'Ramírez', rol: Rol.JEFE_MEDICO },
   ];
 
   for (const u of usuarios) {

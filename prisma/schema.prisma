@@ -23,6 +23,7 @@ enum Rol {
   RRHH_FINANZAS
   ADMISIONES
   ALMACEN
+  JEFE_MEDICO
 }
 
 model Usuario {
@@ -72,6 +73,7 @@ model Usuario {
   citasAsignadas  CitaAgenda[]
   ingresos        Ingreso[]
   egresosAutorizados EgresoRegistro[]
+  notificaciones     Notificacion[]
 
   contraRecibosRecibidos  ContraRecibo[]
 
@@ -84,9 +86,12 @@ model Usuario {
 
 enum EstadoPaciente {
   PROSPECTO // Primer contacto / pre-ingreso
-  EN_VALORACION // Valoración diagnóstica en curso
+  EN_VALORACION_SOCIOECONOMICA // Llegó a cita, pendiente estudio socioeconómico
+  PENDIENTE_VALORACION_MEDICA // Estudio socioeconómico completo, esperando médico
+  EN_VALORACION // Valoración diagnóstica médica en curso
   PENDIENTE_INGRESO
   INTERNADO
+  DETOX // En proceso de desintoxicación, cama liberada
   EGRESADO
   CANALIZADO // No apto, enviado a otro servicio
 }
@@ -178,10 +183,11 @@ model Paciente {
   egresoRegistro EgresoRegistro?
 
   // Relaciones Modulo Finanzas y Agenda
-  pagos    PagoPaciente[]
-  cargos   CargoPaciente[]
-  citas    CitaAgenda[]
-  ingresos Ingreso[]
+  pagos         PagoPaciente[]
+  cargos        CargoPaciente[]
+  citas         CitaAgenda[]
+  ingresos      Ingreso[]
+  evaluaciones  EvaluacionResultado[]
 
   @@map("pacientes")
 }
@@ -607,6 +613,8 @@ model Expediente {
   saldoPendiente        Float?
   // Nutrición
   indiceBMI             Float?
+  // Historia Médica Clínica completa (JSON serializado desde el formulario)
+  historiaClinica       Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -851,6 +859,26 @@ model CargoPaciente {
   usuarioCarga Usuario  @relation(fields: [usuarioCargaId], references: [id])
 
   @@map("cargos_paciente")
+}
+
+// ============================================================
+// EVALUACIONES PSICOMÉTRICAS
+// ============================================================
+
+model EvaluacionResultado {
+  id              Int      @id @default(autoincrement())
+  pacienteId      Int
+  usuarioId       Int
+  instrumento     String   // AUDIT, PHQ9, CAGE, ASSIST, BECK, HAMILTON, DAST, ASI
+  puntajeTotal    Float
+  interpretacion  String?  @db.Text
+  observaciones   String?  @db.Text
+  fechaAplicacion DateTime @default(now())
+
+  paciente Paciente @relation(fields: [pacienteId], references: [id])
+  usuario  Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@map("evaluaciones_resultados")
 }
 
 // ============================================================
@@ -1441,6 +1469,30 @@ model PreNomina {
 }
 
 // ============================================================
+// CRONOGRAMA DE ACTIVIDADES MÉDICAS
+// ============================================================
+
+enum TipoActividadMedica {
+  INDIVIDUAL
+  COMUNITARIA
+}
+
+model ActividadMedica {
+  id          Int                 @id @default(autoincrement())
+  titulo      String
+  descripcion String?             @db.Text
+  fecha       DateTime
+  hora        String
+  tipo        TipoActividadMedica
+  responsable String
+  icono       String              @default("activity")
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@map("actividades_medicas")
+}
+
+// ============================================================
 // AUDITORIA
 // ============================================================
 
@@ -1456,4 +1508,33 @@ model Auditoria {
   usuario Usuario @relation(fields: [usuarioId], references: [id])
 
   @@map("auditoria")
+}
+
+// ============================================================
+// NOTIFICACIONES Y ALERTAS
+// ============================================================
+
+enum TipoNotificacion {
+  INFO
+  ALERTA
+  EXITO
+  ERROR
+}
+
+model Notificacion {
+  id        Int              @id @default(autoincrement())
+  titulo    String
+  mensaje   String           @db.Text
+  tipo      TipoNotificacion @default(INFO)
+  leida     Boolean          @default(false)
+  link      String?
+  
+  usuarioId Int?
+  rol       Rol?
+  
+  createdAt DateTime @default(now())
+
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
+
+  @@map("notificaciones")
 }

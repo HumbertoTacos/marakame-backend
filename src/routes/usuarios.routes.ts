@@ -13,10 +13,10 @@ const router = Router();
 
 router.use(authenticate, authorize(Rol.ADMIN_GENERAL));
 
-router.get('/',                      getUsuarios);
-router.post('/',                     createUsuario);
-router.put('/:id',                   updateUsuario);
-router.patch('/:id/toggle-activo',   toggleActivo);
-router.patch('/:id/reset-password',  resetPassword);
+router.get('/',                     getUsuarios);
+router.post('/',                    createUsuario);
+router.put('/:id',                  updateUsuario);
+router.patch('/:id/toggle-activo',  toggleActivo);
+router.patch('/:id/reset-password', resetPassword);
 
 export default router;

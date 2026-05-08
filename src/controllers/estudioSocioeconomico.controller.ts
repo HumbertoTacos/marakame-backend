@@ -65,6 +65,13 @@ export const upsertEstudioSocioeconomico = async (req: Request, res: Response) =
     }
   });
 
+  if (completado) {
+    await prisma.paciente.update({
+      where: { id },
+      data: { estado: 'PENDIENTE_VALORACION_MEDICA' }
+    });
+  }
+
   res.json({ success: true, data: estudio });
 };
 

@@ -283,6 +283,7 @@ export const actualizarEvaluacion = async (req: Request, res: Response) => {
   res.json({ success: true, data: updated });
 };
 
+
 // ══════════════════════════════════════════════════════════════
 // NOTAS DE SESIONES CLÍNICAS (PSICOLOGÍA, CONSEJERÍA, FAMILIA, SEGUIMIENTO)
 // ══════════════════════════════════════════════════════════════
