@@ -26,6 +26,7 @@ import actividadesRoutes from './routes/actividades.routes';
 import clinicaRoutes from './routes/clinica.routes';
 import inventarioRoutes from './routes/inventario.routes';
 import egresoRoutes from './routes/egreso.routes';
+import contraReciboRoutes from './routes/contraRecibo.routes';
 import notificacionesRoutes from './routes/notificaciones.routes';
 import pagosRoutes from './routes/pagos.routes';
 
@@ -60,6 +61,7 @@ app.use(`${API}/pacientes`,  pacientesRoutes);
 app.use(`${API}/admisiones`, admisionesRoutes);
 app.use(`${API}/expedientes`, expedientesRoutes);
 app.use(`${API}/almacen`,    almacenRoutes);
+app.use(`${API}/contra-recibos`, contraReciboRoutes);
 app.use(`${API}/compras`,    comprasRoutes);
 app.use(`${API}/nominas`,    nominasRoutes);
 app.use(`${API}/documentos`, documentosRoutes);

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 import { EstadoPaciente, EstadoCama, TipoEgreso } from '@prisma/client';
 import { z } from 'zod';
+import { crearNotificacion } from '../utils/notificaciones';
 
 const egresoSchema = z.object({
   tipoEgreso:             z.nativeEnum(TipoEgreso),
@@ -16,7 +17,7 @@ const egresoSchema = z.object({
 // GET /egreso/paciente/:pacienteId/datos
 // Recopila toda la información necesaria para el wizard de egreso
 export const getDatosEgreso = async (req: Request, res: Response) => {
-  const pacienteId = parseInt(req.params.pacienteId);
+  const pacienteId = parseInt(req.params.pacienteId as string, 10);
 
   const paciente = await prisma.paciente.findUniqueOrThrow({
     where: { id: pacienteId },
@@ -71,7 +72,7 @@ export const getDatosEgreso = async (req: Request, res: Response) => {
 // POST /egreso/paciente/:pacienteId
 // Ejecuta el egreso completo en una transacción atómica
 export const registrarEgreso = async (req: Request, res: Response) => {
-  const pacienteId  = parseInt(req.params.pacienteId);
+  const pacienteId  = parseInt(req.params.pacienteId as string, 10);
   const usuarioId   = req.usuario!.id;
   const body        = egresoSchema.parse(req.body);
 
@@ -144,13 +145,21 @@ export const registrarEgreso = async (req: Request, res: Response) => {
     return { egreso, programa };
   });
 
+  await crearNotificacion({
+    titulo: 'Autorización de Egreso',
+    mensaje: `Se ha registrado el egreso del paciente ID: ${pacienteId} (${body.tipoEgreso}).`,
+    tipo: 'INFO',
+    rol: 'JEFE_MEDICO',
+    link: '/jefatura/solicitudes'
+  });
+
   res.status(201).json({ success: true, data: result });
 };
 
 // GET /egreso/paciente/:pacienteId/registro
 // Devuelve el registro de egreso ya guardado (para consultar después)
 export const getRegistroEgreso = async (req: Request, res: Response) => {
-  const pacienteId = parseInt(req.params.pacienteId);
+  const pacienteId = parseInt(req.params.pacienteId as string, 10);
 
   const registro = await prisma.egresoRegistro.findUnique({
     where: { pacienteId },
