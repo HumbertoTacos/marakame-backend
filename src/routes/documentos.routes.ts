@@ -12,7 +12,7 @@ const router = Router();
 router.use(authenticate);
 
 // roles permitidos para el expediente digital
-const rolesExpediente = authorize('ADMIN_GENERAL', 'AREA_MEDICA', 'ENFERMERIA', 'PSICOLOGIA', 'NUTRICION', 'ADMISIONES');
+const rolesExpediente = authorize('ADMIN_GENERAL', 'AREA_MEDICA', 'JEFE_MEDICO', 'ENFERMERIA', 'PSICOLOGIA', 'NUTRICION', 'ADMISIONES');
 
 
 // ============================================================

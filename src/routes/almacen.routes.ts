@@ -22,7 +22,7 @@ router.put('/productos/:id', authorize('ALMACEN', 'ADMIN_GENERAL'), updateProduc
 // ============================================================
 // MOVIMIENTOS (KARDEX)
 // ============================================================
-router.post('/movimientos', authorize('ALMACEN', 'ADMIN_GENERAL', 'AREA_MEDICA', 'ENFERMERIA' as any), registerMovimiento);
+router.post('/movimientos', authorize('ALMACEN', 'ADMIN_GENERAL', 'AREA_MEDICA', 'JEFE_MEDICO', 'ENFERMERIA' as any), registerMovimiento);
 router.get('/movimientos', authorize('ALMACEN', 'ADMIN_GENERAL', 'RRHH_FINANZAS'), getMovimientos);
 
 export default router;

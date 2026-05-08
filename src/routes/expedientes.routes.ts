@@ -60,6 +60,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       cuotaAsignada: data.cuotaAsignada,
       saldoPendiente: data.saldoPendiente,
       indiceBMI: data.indiceBMI,
+      ...(data.historiaClinica !== undefined && { historiaClinica: data.historiaClinica }),
     }
   });
 

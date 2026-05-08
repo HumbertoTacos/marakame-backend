@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
+import { EstadoDocumentoExpediente } from '@prisma/client';
 import { prisma } from '../utils/prisma';
 import { AppError } from '../middlewares/errorHandler';
-import { aplicarCapaPrivacidad, asignarClaveUnicaPaciente } from '../utils/paciente.utils';
+import { aplicarCapaPrivacidad, asignarClaveUnicaPaciente, generarSiguienteClaveUnica } from '../utils/paciente.utils';
 
 export const createPrimerContacto = async (req: Request, res: Response) => {
   const data = req.body;
@@ -31,6 +32,7 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
       // Crear nuevo paciente con el estado dictaminado
       const estadoFinal = data.esApto === true || data.esApto === 'true' ? 'PENDIENTE_INGRESO' : (data.esApto === false || data.esApto === 'false' ? 'CANALIZADO' : 'PROSPECTO');
       
+      const claveUnicaProspecto = await generarSiguienteClaveUnica(tx);
       const paciente = await tx.paciente.create({
         data: {
           nombre: nombreFinal,
@@ -39,7 +41,8 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
           fechaNacimiento: fechaNacimientoFinal,
           sexo: 'M',
           estado: estadoFinal,
-          sustancias: data.sustancias || []
+          sustancias: data.sustancias || [],
+          claveUnica: parseInt(claveUnicaProspecto, 10)
         }
       });
       pacienteIdToUse = paciente.id;
@@ -232,10 +235,10 @@ export const registrarLlegadaCita = async (req: Request, res: Response) => {
 
   if (!paciente) throw new AppError(404, 'Paciente no encontrado');
 
-  // 2. Transicionar estado a EN_VALORACION (Esto desbloquea valoraciones en el front)
+  // 2. Transicionar estado a EN_VALORACION_SOCIOECONOMICA (Activa el Wizard Socioeconómico primero)
   const updated = await prisma.paciente.update({
     where: { id: parseInt(id as string, 10) },
-    data: { estado: 'EN_VALORACION' }
+    data: { estado: 'EN_VALORACION_SOCIOECONOMICA' }
   });
 
   // 3. También buscamos si tiene una cita programada para marcarla o actualizar su acuerdo
@@ -249,10 +252,10 @@ export const registrarLlegadaCita = async (req: Request, res: Response) => {
     }
   });
 
-  res.json({ 
-    success: true, 
-    data: updated, 
-    message: 'Llegada registrada. El paciente ahora puede ser valorado por el médico y trabajo social.' 
+  res.json({
+    success: true,
+    data: updated,
+    message: 'Llegada registrada. El paciente ahora puede ser atendido por Trabajo Social para el estudio socioeconómico.'
   });
 };
 
@@ -633,6 +636,7 @@ export const createSolicitud = async (req: Request, res: Response) => {
         }
       });
     } else {
+      const claveUnicaSolicitud = await generarSiguienteClaveUnica(tx);
       try {
         paciente = await tx.paciente.create({
           data: {
@@ -644,7 +648,8 @@ export const createSolicitud = async (req: Request, res: Response) => {
             curp: normalizedCurp,
             tipoAdiccion: data.tipoAdiccion,
             motivoIngreso: data.motivoIngreso,
-            areaDeseada: data.areaDeseada
+            areaDeseada: data.areaDeseada,
+            claveUnica: parseInt(claveUnicaSolicitud, 10)
           }
         });
       } catch (error: any) {
@@ -762,13 +767,13 @@ export const createSolicitud = async (req: Request, res: Response) => {
             nombre,
             pacienteId: paciente.id,
             ubicacion: 'LADO_IZQ' as const,
-            estado: 'PENDIENTE'
+            estado: 'PENDIENTE' as EstadoDocumentoExpediente
           })),
           ...docsEval.map(nombre => ({
             nombre,
             pacienteId: paciente.id,
             ubicacion: 'EVALUACIONES' as const,
-            estado: 'PENDIENTE'
+            estado: 'PENDIENTE' as EstadoDocumentoExpediente
           }))
         ]
       });
@@ -853,13 +858,13 @@ export const asignarCama = async (req: Request, res: Response) => {
           nombre,
           pacienteId: solicitud.pacienteId,
           ubicacion: 'LADO_IZQ' as const,
-          estado: 'PENDIENTE'
+          estado: 'PENDIENTE' as EstadoDocumentoExpediente
         })),
         ...['Cuestionario ASSIST', 'Cuestionario de abuso de drogas', 'Escala de dependencia al alcohol', 'Ludopatía'].map(nombre => ({
           nombre,
           pacienteId: solicitud.pacienteId,
           ubicacion: 'EVALUACIONES' as const,
-          estado: 'PENDIENTE'
+          estado: 'PENDIENTE' as EstadoDocumentoExpediente
         }))
       ]
     });

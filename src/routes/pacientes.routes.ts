@@ -25,4 +25,10 @@ router.get('/aprobados-para-ingreso', pacientesController.getAprobadosParaIngres
  */
 router.get('/:id', pacientesController.getPacienteById);
 
+/**
+ * @route PATCH /api/v1/pacientes/:id/archivar
+ * @desc Borrado lógico — marca deletedAt para archivar el registro
+ */
+router.patch('/:id/archivar', pacientesController.archivarPaciente);
+
 export default router;

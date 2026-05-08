@@ -23,6 +23,7 @@ enum Rol {
   RRHH_FINANZAS
   ADMISIONES
   ALMACEN
+  JEFE_MEDICO
 }
 
 model Usuario {
@@ -73,7 +74,9 @@ model Usuario {
 
 enum EstadoPaciente {
   PROSPECTO // Primer contacto / pre-ingreso
-  EN_VALORACION // Valoración diagnóstica en curso
+  EN_VALORACION_SOCIOECONOMICA // Llegó a cita, pendiente estudio socioeconómico
+  PENDIENTE_VALORACION_MEDICA // Estudio socioeconómico completo, esperando médico
+  EN_VALORACION // Valoración diagnóstica médica en curso
   PENDIENTE_INGRESO
   INTERNADO
   EGRESADO
@@ -564,6 +567,8 @@ model Expediente {
   saldoPendiente        Float?
   // Nutrición
   indiceBMI             Float?
+  // Historia Médica Clínica completa (JSON serializado desde el formulario)
+  historiaClinica       Json?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1180,6 +1185,30 @@ model PreNomina {
   empleado Empleado @relation(fields: [empleadoId], references: [id])
 
   @@map("prenominas")
+}
+
+// ============================================================
+// CRONOGRAMA DE ACTIVIDADES MÉDICAS
+// ============================================================
+
+enum TipoActividadMedica {
+  INDIVIDUAL
+  COMUNITARIA
+}
+
+model ActividadMedica {
+  id          Int                 @id @default(autoincrement())
+  titulo      String
+  descripcion String?             @db.Text
+  fecha       DateTime
+  hora        String
+  tipo        TipoActividadMedica
+  responsable String
+  icono       String              @default("activity")
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@map("actividades_medicas")
 }
 
 // ============================================================

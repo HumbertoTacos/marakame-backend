@@ -10,45 +10,15 @@ import { prisma } from './prisma';
 export const generarSiguienteClaveUnica = async (tx?: any): Promise<string> => {
   const client = tx || prisma;
 
-  const MAX_REINTENTOS = 5;
-  let intento = 0;
+  const ultimo = await client.paciente.findFirst({
+    orderBy: { claveUnica: 'desc' },
+    select: { claveUnica: true }
+  });
 
-  while (intento < MAX_REINTENTOS) {
-    try {
-      // 🔹 Obtener todas las claves válidas (numéricas)
-      const pacientes = await client.paciente.findMany({
-        where: {
-          claveUnica: { not: null }
-        },
-        select: {
-          claveUnica: true
-        }
-      });
+  const base = new Date().getFullYear() * 100 + 1; // e.g. 202601
+  const siguiente = ultimo?.claveUnica ? ultimo.claveUnica + 1 : base;
 
-      // 🔹 Filtrar y convertir a números válidos
-      const numeros: number[] = pacientes
-        .map((p: { claveUnica: string | null }) => parseInt(p.claveUnica!, 10))
-        .filter((n: number) => !isNaN(n));
-
-      // 🔹 Obtener el máximo real
-      const max = numeros.length > 0 ? Math.max(...numeros) : 4921;
-
-      const siguiente = max + 1;
-
-      return siguiente.toString();
-
-    } catch (error: any) {
-      // 🔥 Si hay conflicto de concurrencia (P2002), reintenta
-      if (error.code === 'P2002') {
-        intento++;
-        continue;
-      }
-
-      throw error;
-    }
-  }
-
-  throw new Error('No se pudo generar una clave única después de varios intentos');
+  return siguiente.toString();
 };
 
 

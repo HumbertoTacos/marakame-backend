@@ -65,6 +65,9 @@ export const getPacientes = async (req: Request, res: Response) => {
           esAptoParaIngreso: true,
           createdAt: true
         }
+      },
+      expediente: {
+        select: { id: true }
       }
     },
     orderBy: { createdAt: 'desc' }
@@ -158,6 +161,19 @@ export const getAprobadosParaIngreso = async (_req: Request, res: Response) => {
     success: true,
     data: mappedPacientes
   });
+};
+
+/**
+ * Borrado lógico — establece deletedAt para archivar el registro
+ * PATCH /api/v1/pacientes/:id/archivar
+ */
+export const archivarPaciente = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const paciente = await prisma.paciente.update({
+    where: { id: parseInt(id, 10) },
+    data: { deletedAt: new Date() }
+  });
+  res.json({ success: true, data: paciente });
 };
 
 /**
