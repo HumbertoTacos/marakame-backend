@@ -61,7 +61,7 @@ export const generarNomina = async (req: Request, res: Response) => {
         periodo,
         fechaInicio: new Date(fechaInicio),
         fechaFin: new Date(fechaFin),
-        estado: 'EN_REVISION', // <--- Mantenemos el estado que pediste
+        estado: 'EN_REVISION', 
         totalPercepciones: parseFloat(totalPercepciones || '0'),
         totalDeducciones: parseFloat(totalDeducciones || '0'),
         totalNetoPagar: parseFloat(totalNetoPagar || '0')
@@ -102,11 +102,6 @@ export const generarNomina = async (req: Request, res: Response) => {
         };
       });
 
-      // AQUÍ ESTÁ EL CAMBIO CLAVE: Usamos el nombre correcto del modelo en Prisma
-      // Si tu esquema dice @@map("prenominas") pero el modelo se llama PreNomina,
-      // entonces prisma.preNomina es correcto. Si el modelo se llama Prenomina, entonces
-      // usamos prisma.prenomina. Revisa tu schema.prisma para confirmar el nombre del MODELO.
-      // Asumiendo que el modelo se llama PreNomina (como en el código anterior):
       await prisma.preNomina.createMany({
         data: registrosPreNomina
       });
@@ -131,13 +126,8 @@ export const generarNomina = async (req: Request, res: Response) => {
 };
 
 export const getNominas = async (req: Request, res: Response) => {
-  // Filtramos para NO mostrar las que ya están autorizadas en el Dashboard principal
+  // CORRECCIÓN: Quitamos el filtro 'not: AUTORIZADO'. Ahora manda TODO a React.
   const nominas = await prisma.nomina.findMany({
-    where: {
-      estado: {
-        not: 'AUTORIZADO' 
-      }
-    },
     include: {
       usuarioAutoriza: { select: { nombre: true, apellidos: true } },
       prenominas: { include: { empleado: true } }
@@ -146,6 +136,69 @@ export const getNominas = async (req: Request, res: Response) => {
   });
   res.json({ success: true, data: nominas });
 };
+
+// ============================================================
+// FLUJO DE FIRMAS (NUEVO Y AUTOMATIZADO)
+// ============================================================
+export const firmarNomina = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const rolUsuario = req.usuario!.rol; 
+
+    const nomina = await prisma.nomina.findUnique({ where: { id: Number(id) } });
+    if (!nomina) return res.status(404).json({ success: false, message: 'Nómina no encontrada' });
+
+    let dataToUpdate: any = {};
+
+    // 1. Asignamos la firma dependiendo del rol
+    switch (rolUsuario) {
+      case 'RRHH_FINANZAS':
+        dataToUpdate.firmaFinanzas = true;
+        break;
+      case 'ADMINISTRACION':
+        dataToUpdate.firmaAdministracion = true;
+        break;
+      case 'DIRECCION_GENERAL':
+      case 'ADMIN_GENERAL':
+        dataToUpdate.firmaDireccion = true;
+        break;
+      case 'RECURSOS_HUMANOS':
+        dataToUpdate.firmaRecursosHumanos = true;
+        break;
+      default:
+        // Si tu rol no coincide o estás probando sin login estricto, 
+        // puedes comentar el default para pruebas temporales.
+        return res.status(403).json({ success: false, message: 'Tu rol no tiene jerarquía para firmar.' });
+    }
+
+    // 2. Revisamos cuántas firmas tendría en total con esta nueva acción
+    const firmasCompletas = [
+      dataToUpdate.firmaRecursosHumanos ?? nomina.firmaRecursosHumanos,
+      dataToUpdate.firmaFinanzas ?? nomina.firmaFinanzas,
+      dataToUpdate.firmaAdministracion ?? nomina.firmaAdministracion,
+      dataToUpdate.firmaDireccion ?? nomina.firmaDireccion
+    ].filter(Boolean).length;
+
+    // 3. LA MAGIA: Si ya juntó las 4 firmas, cambiamos el estado automáticamente
+    if (firmasCompletas === 4) {
+      dataToUpdate.estado = 'AUTORIZADO';
+      dataToUpdate.fechaAutorizacion = new Date();
+      dataToUpdate.usuarioAutorizaId = req.usuario!.id;
+    }
+
+    // 4. Guardamos en la base de datos
+    const actualizada = await prisma.nomina.update({
+      where: { id: Number(id) },
+      data: dataToUpdate
+    });
+
+    res.json({ success: true, message: 'Firma registrada correctamente.', data: actualizada });
+  } catch (error: any) {
+    console.error("Error al firmar:", error);
+    res.status(500).json({ success: false, message: 'Error interno al firmar', detalle: error.message });
+  }
+};
+
 
 export const autorizarNomina = async (req: Request, res: Response) => {
   const { id } = req.params;
@@ -214,8 +267,6 @@ export const updatePreNomina = async (req: Request, res: Response) => {
   res.json({ success: true, data: preUpdate });
 };
 
-
-//Guarda datos y hace los calculos finales para la nomina de cada empleado
 
 export const actualizarPreNomina = async (req: Request, res: Response) => {
   try {
@@ -309,7 +360,7 @@ export const getNominaById = async (req: Request, res: Response) => {
       where: { id: Number(id) },
       include: { 
         prenominas: { 
-          include: { empleado: true } // Traemos los recibos y los datos del empleado
+          include: { empleado: true }
         } 
       }
     });
@@ -321,5 +372,20 @@ export const getNominaById = async (req: Request, res: Response) => {
     res.status(200).json({ success: true, data: nomina });
   } catch (error: any) {
     res.status(500).json({ success: false, message: "Error al buscar la nómina", detalle: error.message });
+  }
+};
+
+export const archivarNomina = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    
+    const nomina = await prisma.nomina.update({
+      where: { id: Number(id) },
+      data: { estado: 'PAGADO' } // Cambia a estado terminal
+    });
+
+    res.json({ success: true, message: 'Nómina archivada y cerrada.', data: nomina });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: 'Error al archivar la nómina', detalle: error.message });
   }
 };
