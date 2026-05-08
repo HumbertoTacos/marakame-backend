@@ -71,13 +71,20 @@ router.put('/:id', async (req: Request, res: Response) => {
 // 1. Agregar Signos Vitales
 router.post('/:id/signos', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { usuarioId, ...signos } = req.body;
+  const { presionArterial, temperatura, frecuenciaCardiaca, frecuenciaRespiratoria, oxigenacion, glucosa, peso, observaciones } = req.body;
 
   const nuevoSigno = await prisma.signoVital.create({
     data: {
       expedienteId: parseInt(id as string, 10),
-      usuarioId,
-      ...signos,
+      usuarioId: req.usuario!.id,
+      presionArterial,
+      temperatura:            temperatura            !== undefined ? parseFloat(temperatura)            : undefined,
+      frecuenciaCardiaca:     frecuenciaCardiaca     !== undefined ? parseInt(frecuenciaCardiaca)        : undefined,
+      frecuenciaRespiratoria: frecuenciaRespiratoria !== undefined ? parseInt(frecuenciaRespiratoria)    : undefined,
+      oxigenacion:            oxigenacion            !== undefined ? parseInt(oxigenacion)               : undefined,
+      glucosa:                glucosa                !== undefined ? parseFloat(glucosa)                 : undefined,
+      peso:                   peso                   !== undefined ? parseFloat(peso)                    : undefined,
+      observaciones,
     }
   });
 
@@ -87,12 +94,12 @@ router.post('/:id/signos', async (req: Request, res: Response) => {
 // 2. Agregar Nota de Evolución
 router.post('/:id/notas', async (req: Request, res: Response) => {
   const { id } = req.params;
-  const { usuarioId, tipo, nota } = req.body;
+  const { tipo, nota } = req.body;
 
   const nuevaNota = await prisma.notaEvolucion.create({
     data: {
       expedienteId: parseInt(id as string, 10),
-      usuarioId,
+      usuarioId: req.usuario!.id,
       tipo,
       nota,
     }
