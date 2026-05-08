@@ -67,6 +67,7 @@ model Usuario {
   citasAsignadas  CitaAgenda[]
   ingresos        Ingreso[]
   egresosAutorizados EgresoRegistro[]
+  notificaciones     Notificacion[]
 
   @@map("usuarios")
 }
@@ -175,6 +176,7 @@ model Paciente {
   cargos   CargoPaciente[]
   citas    CitaAgenda[]
   ingresos Ingreso[]
+  evaluaciones EvaluacionResultado[]
 
   @@map("pacientes")
 }
@@ -743,6 +745,22 @@ model PlanNutricional {
   @@map("planes_nutricionales")
 }
 
+model EvaluacionResultado {
+  id              Int      @id @default(autoincrement())
+  pacienteId      Int
+  usuarioId       Int
+  instrumento     String
+  puntajeTotal    Float
+  interpretacion  String?  @db.Text
+  observaciones   String?  @db.Text
+  fechaAplicacion DateTime @default(now())
+
+  paciente Paciente @relation(fields: [pacienteId], references: [id])
+  usuario  Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@map("evaluaciones_resultados")
+}
+
 // ============================================================
 // DOCUMENTOS Y ARCHIVOS
 // ============================================================
@@ -1286,4 +1304,33 @@ model Auditoria {
   usuario Usuario @relation(fields: [usuarioId], references: [id])
 
   @@map("auditoria")
+}
+
+// ============================================================
+// NOTIFICACIONES Y ALERTAS
+// ============================================================
+
+enum TipoNotificacion {
+  INFO
+  ALERTA
+  EXITO
+  ERROR
+}
+
+model Notificacion {
+  id        Int              @id @default(autoincrement())
+  titulo    String
+  mensaje   String           @db.Text
+  tipo      TipoNotificacion @default(INFO)
+  leida     Boolean          @default(false)
+  link      String?
+  
+  usuarioId Int?
+  rol       Rol?
+  
+  createdAt DateTime @default(now())
+
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
+
+  @@map("notificaciones")
 }

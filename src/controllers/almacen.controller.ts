@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 import { AppError } from '../middlewares/errorHandler';
+import { crearNotificacion } from '../utils/notificaciones';
 
 // ============================================================
 // PRODUCTOS
@@ -120,6 +121,17 @@ export const registerMovimiento = async (req: Request, res: Response) => {
       estadoStock
     }
   });
+
+  // 3. Generar notificación si el stock es bajo o crítico
+  if (estadoStock === 'CRITICO' || estadoStock === 'BAJO') {
+    await crearNotificacion({
+      titulo: `Stock ${estadoStock}: ${producto.nombre}`,
+      mensaje: `El producto ${producto.nombre} (${producto.codigo}) ha alcanzado un nivel ${estadoStock.toLowerCase()}. Stock actual: ${nuevoStock} ${producto.unidad}.`,
+      tipo: estadoStock === 'CRITICO' ? 'ERROR' : 'ALERTA',
+      rol: 'ALMACEN',
+      link: '/almacen'
+    });
+  }
 
   res.status(201).json({ success: true, data: movimiento });
 };
