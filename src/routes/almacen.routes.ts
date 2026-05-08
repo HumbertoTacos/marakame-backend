@@ -79,7 +79,7 @@ router.put('/productos/:id', authorize('ALMACEN', 'ADMIN_GENERAL'), async (req, 
   next();
 }, updateProducto);
 
-router.post('/movimientos', authorize('ALMACEN', 'ADMIN_GENERAL', 'AREA_MEDICA', 'JEFE_MEDICO', 'ENFERMERIA' as any), async (req, res, next) => {
+router.post('/movimientos', authorize('ALMACEN', 'ADMIN_GENERAL', 'AREA_MEDICA', 'JEFE_MEDICO', 'ENFERMERIA'), async (req, res, next) => {
   req.body = parseBody(registerMovimientoSchema, req.body);
   next();
 }, registerMovimiento);
