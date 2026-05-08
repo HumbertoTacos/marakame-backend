@@ -3,6 +3,7 @@ import { EstadoDocumentoExpediente } from '@prisma/client';
 import { prisma } from '../utils/prisma';
 import { AppError } from '../middlewares/errorHandler';
 import { aplicarCapaPrivacidad, asignarClaveUnicaPaciente, generarSiguienteClaveUnica } from '../utils/paciente.utils';
+import { crearNotificacion } from '../utils/notificaciones';
 
 export const createPrimerContacto = async (req: Request, res: Response) => {
   const data = req.body;
@@ -349,6 +350,14 @@ export const asignarCamaDirecta = async (req: Request, res: Response) => {
     });
 
     return { paciente, camaId };
+  });
+
+  await crearNotificacion({
+    titulo: 'Asignación de Cama Directa',
+    mensaje: `Se ha asignado cama al paciente ID: ${pacienteId}. Requiere atención en Área Médica.`,
+    tipo: 'INFO',
+    rol: 'AREA_MEDICA',
+    link: '/medica/pacientes'
   });
 
   res.json({ success: true, data: result, message: 'Cama asignada correctamente' });
@@ -916,8 +925,16 @@ export const asignarCama = async (req: Request, res: Response) => {
       }
     });
 
-    return asignacion;
+    return { asignacion, pacienteId: solicitud.pacienteId };
   });
 
-  res.json({ success: true, data: result });
+  await crearNotificacion({
+    titulo: 'Paciente Ingresado (Cama Asignada)',
+    mensaje: `Un nuevo paciente (ID: ${result.pacienteId}) ha sido ingresado y se le ha asignado cama.`,
+    tipo: 'INFO',
+    rol: 'AREA_MEDICA',
+    link: '/medica/pacientes'
+  });
+
+  res.json({ success: true, data: result.asignacion });
 };

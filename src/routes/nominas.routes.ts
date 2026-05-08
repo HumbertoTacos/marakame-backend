@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authenticate, authorize } from '../middlewares/auth';
 import { 
   createEmpleado, getEmpleados,
-  generarNomina, getNominas, getNominaById, autorizarNomina, // <--- Agregamos getNominaById
+  generarNomina, getNominas, getNominaById, autorizarNomina, archivarNomina, // <--- Agregamos archivarNomina
   actualizarPreNomina // <--- Solo dejamos la nueva
 } from '../controllers/nominas.controller';
 
@@ -24,5 +24,7 @@ router.put('/ciclo/:id/autorizar', autorizarNomina);
 
 // Pre-Nóminas específicas (Edición individual)
 router.put('/prenominas/:id', actualizarPreNomina); 
+
+router.put('/ciclo/:id/archivar', archivarNomina); // (Ojo con tu middleware de auth)
 
 export default router;
