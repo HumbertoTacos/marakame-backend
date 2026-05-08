@@ -57,6 +57,7 @@ model Usuario {
   signosTomados         SignoVital[]
   tratamientosRecetados TratamientoMedico[]
   suministrosAplicados  SuministroTratamiento[]
+  evaluacionesAplicadas EvaluacionResultado[]
 
   // Relaciones Financieras y Citas
   pagosRecibidos  PagoPaciente[]
@@ -165,10 +166,11 @@ model Paciente {
   cama Cama?
 
   // Relaciones Modulo Finanzas y Agenda
-  pagos    PagoPaciente[]
-  cargos   CargoPaciente[]
-  citas    CitaAgenda[]
-  ingresos Ingreso[]
+  pagos         PagoPaciente[]
+  cargos        CargoPaciente[]
+  citas         CitaAgenda[]
+  ingresos      Ingreso[]
+  evaluaciones  EvaluacionResultado[]
 
   @@map("pacientes")
 }
@@ -756,6 +758,26 @@ model CargoPaciente {
   usuarioCarga Usuario  @relation(fields: [usuarioCargaId], references: [id])
 
   @@map("cargos_paciente")
+}
+
+// ============================================================
+// EVALUACIONES PSICOMÉTRICAS
+// ============================================================
+
+model EvaluacionResultado {
+  id              Int      @id @default(autoincrement())
+  pacienteId      Int
+  usuarioId       Int
+  instrumento     String   // AUDIT, PHQ9, CAGE, ASSIST, BECK, HAMILTON, DAST, ASI
+  puntajeTotal    Float
+  interpretacion  String?
+  observaciones   String?  @db.Text
+  fechaAplicacion DateTime @default(now())
+
+  paciente Paciente @relation(fields: [pacienteId], references: [id])
+  usuario  Usuario  @relation(fields: [usuarioId], references: [id])
+
+  @@map("evaluaciones_resultados")
 }
 
 // ============================================================
