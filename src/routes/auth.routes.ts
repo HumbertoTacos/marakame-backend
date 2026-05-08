@@ -96,8 +96,10 @@ router.post('/refresh', async (req, res) => {
 
 // GET /api/v1/auth/me
 router.get('/me', authenticate, async (req, res) => {
+  const usuarioId = req.usuario!.id;
+  
   const usuario = await prisma.usuario.findUnique({
-    where: { id: req.usuario!.id },
+    where: { id: usuarioId },
     select: {
       id: true,
       nombre: true,
@@ -107,6 +109,20 @@ router.get('/me', authenticate, async (req, res) => {
       ultimoAcceso: true,
     },
   });
+
+  if (usuario) {
+    // Actualizar último acceso solo si ha pasado más de 1 hora desde la última vez
+    const ahora = new Date();
+    const haceUnaHora = new Date(ahora.getTime() - 60 * 60 * 1000);
+    
+    if (!usuario.ultimoAcceso || usuario.ultimoAcceso < haceUnaHora) {
+      await prisma.usuario.update({
+        where: { id: usuarioId },
+        data: { ultimoAcceso: ahora }
+      });
+    }
+  }
+
   res.json({ success: true, data: usuario });
 });
 

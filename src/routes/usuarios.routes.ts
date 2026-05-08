@@ -1,39 +1,22 @@
-﻿import { Router } from 'express';
-import { authenticate } from '../middlewares/auth';
-import { prisma } from '../utils/prisma';
+import { Router } from 'express';
+import { authenticate, authorize } from '../middlewares/auth';
 import { Rol } from '@prisma/client';
+import {
+  getUsuarios,
+  createUsuario,
+  updateUsuario,
+  toggleActivo,
+  resetPassword,
+} from '../controllers/usuarios.controller';
 
 const router = Router();
 
-router.get('/', authenticate, async (req, res) => {
-  const { roles } = req.query;
+router.use(authenticate, authorize(Rol.ADMIN_GENERAL));
 
-  const where: Record<string, unknown> = { deletedAt: null };
-
-  if (roles && typeof roles === 'string') {
-    const rolesArr = roles.split(',').filter((r): r is Rol =>
-      Object.values(Rol).includes(r as Rol)
-    );
-    if (rolesArr.length > 0) {
-      where.rol = { in: rolesArr };
-    }
-  }
-
-  const usuarios = await prisma.usuario.findMany({
-    where,
-    select: {
-      id: true,
-      nombre: true,
-      apellidos: true,
-      correo: true,
-      rol: true,
-      activo: true,
-      ultimoAcceso: true,
-    },
-    orderBy: [{ rol: 'asc' }, { nombre: 'asc' }],
-  });
-
-  res.json({ success: true, data: usuarios });
-});
+router.get('/',                     getUsuarios);
+router.post('/',                    createUsuario);
+router.put('/:id',                  updateUsuario);
+router.patch('/:id/toggle-activo',  toggleActivo);
+router.patch('/:id/reset-password', resetPassword);
 
 export default router;

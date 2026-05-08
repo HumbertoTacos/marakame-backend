@@ -59,12 +59,16 @@ model Usuario {
   tratamientosRecetados TratamientoMedico[]
   suministrosAplicados  SuministroTratamiento[]
   evaluacionesAplicadas EvaluacionResultado[]
+  sesionesClinicas      NotaSesionClinica[]
+  planesNutricionales   PlanNutricional[]
 
   // Relaciones Financieras y Citas
   pagosRecibidos  PagoPaciente[]
   cargosAplicados CargoPaciente[]
   citasAsignadas  CitaAgenda[]
   ingresos        Ingreso[]
+  egresosAutorizados EgresoRegistro[]
+  notificaciones     Notificacion[]
 
   @@map("usuarios")
 }
@@ -168,6 +172,8 @@ model Paciente {
 
   // Cama (1 to 1)
   cama Cama?
+
+  egresoRegistro EgresoRegistro?
 
   // Relaciones Modulo Finanzas y Agenda
   pagos         PagoPaciente[]
@@ -384,6 +390,36 @@ model ValoracionMedica {
 }
 
 // ============================================================
+// EGRESO DE PACIENTE
+// ============================================================
+
+enum TipoEgreso {
+  ALTA_MEDICA        // Completó el tratamiento, autorizado por el médico
+  ALTA_VOLUNTARIA    // El paciente decidió retirarse antes de concluir
+  EXPULSION          // Retiro por sanción disciplinaria
+  FUGA               // Se retiró sin autorización del personal
+  TRASLADO           // Canalizado a otra institución especializada
+}
+
+model EgresoRegistro {
+  id                     Int        @id @default(autoincrement())
+  pacienteId             Int        @unique
+  fechaEgreso            DateTime   @default(now())
+  tipoEgreso             TipoEgreso
+  notaMedica             String?    @db.Text
+  saldoPendiente         Float      @default(0)
+  pertenenciasEntregadas Boolean    @default(false)
+  inscritoReforzamiento  Boolean    @default(false)
+  autorizadoPorId        Int
+  createdAt              DateTime   @default(now())
+
+  paciente      Paciente @relation(fields: [pacienteId], references: [id])
+  autorizadoPor Usuario  @relation(fields: [autorizadoPorId], references: [id])
+
+  @@map("egresos_registros")
+}
+
+// ============================================================
 // PROGRAMA DE REFORZAMIENTO
 // ============================================================
 
@@ -579,9 +615,11 @@ model Expediente {
   paciente Paciente @relation(fields: [pacienteId], references: [id])
 
   // Nuevas tablas relacionales clínicas
-  notasEvolucion NotaEvolucion[]
-  signosVitales  SignoVital[]
-  tratamientos   TratamientoMedico[]
+  notasEvolucion   NotaEvolucion[]
+  signosVitales    SignoVital[]
+  tratamientos     TratamientoMedico[]
+  sesionesClinicas NotaSesionClinica[]
+  planNutricional  PlanNutricional?
 
   @@map("expedientes")
 }
@@ -661,6 +699,56 @@ model SuministroTratamiento {
   enfermero   Usuario           @relation(fields: [enfermeroId], references: [id])
 
   @@map("suministros_tratamientos")
+}
+
+// ============================================================
+// NOTAS DE SESIONES CLÍNICAS (PSICOLOGÍA, CONSEJERÍA, FAMILIA, SEGUIMIENTO)
+// ============================================================
+
+enum TipoSesion {
+  PSICOLOGIA
+  CONSEJERIA
+  FAMILIA
+  SEGUIMIENTO
+}
+
+model NotaSesionClinica {
+  id           Int        @id @default(autoincrement())
+  expedienteId Int
+  usuarioId    Int
+  tipo         TipoSesion
+  nota         String     @db.Text
+  fecha        DateTime   @default(now())
+
+  expediente Expediente @relation(fields: [expedienteId], references: [id])
+  usuario    Usuario    @relation(fields: [usuarioId], references: [id])
+
+  @@map("notas_sesiones_clinicas")
+}
+
+// ============================================================
+// PLAN NUTRICIONAL
+// ============================================================
+
+model PlanNutricional {
+  id              Int      @id @default(autoincrement())
+  expedienteId    Int      @unique
+  usuarioId       Int
+  peso            Float?
+  talla           Float?
+  imc             Float?
+  diagnostico     String?  @db.Text
+  objetivos       String?  @db.Text
+  recomendaciones String?  @db.Text
+  restricciones   String?  @db.Text
+  observaciones   String?  @db.Text
+  fechaEvaluacion DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  expediente Expediente @relation(fields: [expedienteId], references: [id])
+  usuario    Usuario    @relation(fields: [usuarioId], references: [id])
+
+  @@map("planes_nutricionales")
 }
 
 // ============================================================
@@ -776,7 +864,7 @@ model EvaluacionResultado {
   usuarioId       Int
   instrumento     String   // AUDIT, PHQ9, CAGE, ASSIST, BECK, HAMILTON, DAST, ASI
   puntajeTotal    Float
-  interpretacion  String?
+  interpretacion  String?  @db.Text
   observaciones   String?  @db.Text
   fechaAplicacion DateTime @default(now())
 
@@ -1250,4 +1338,33 @@ model Auditoria {
   usuario Usuario @relation(fields: [usuarioId], references: [id])
 
   @@map("auditoria")
+}
+
+// ============================================================
+// NOTIFICACIONES Y ALERTAS
+// ============================================================
+
+enum TipoNotificacion {
+  INFO
+  ALERTA
+  EXITO
+  ERROR
+}
+
+model Notificacion {
+  id        Int              @id @default(autoincrement())
+  titulo    String
+  mensaje   String           @db.Text
+  tipo      TipoNotificacion @default(INFO)
+  leida     Boolean          @default(false)
+  link      String?
+  
+  usuarioId Int?
+  rol       Rol?
+  
+  createdAt DateTime @default(now())
+
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
+
+  @@map("notificaciones")
 }

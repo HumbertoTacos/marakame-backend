@@ -25,4 +25,12 @@ router.get('/paciente/:pacienteId/evaluaciones', controller.getEvaluaciones);
 router.post('/paciente/:pacienteId/evaluaciones', authorize('ADMIN_GENERAL', 'AREA_MEDICA', 'PSICOLOGIA'), controller.registrarEvaluacion);
 router.patch('/evaluaciones/:id', authorize('ADMIN_GENERAL', 'AREA_MEDICA', 'PSICOLOGIA'), controller.actualizarEvaluacion);
 
+// ── Sesiones Clínicas (Psicología, Consejería, Familia, Seguimiento) ──
+router.get('/expediente/:expedienteId/sesiones/:tipo', controller.getNotasSesion);
+router.post('/expediente/:expedienteId/sesiones/:tipo', controller.crearNotaSesion);
+
+// ── Plan Nutricional ─────────────────────────────────────────
+router.get('/expediente/:expedienteId/nutricion', controller.getPlanNutricional);
+router.put('/expediente/:expedienteId/nutricion', authorize('ADMIN_GENERAL', 'NUTRICION', 'AREA_MEDICA'), controller.upsertPlanNutricional);
+
 export default router;

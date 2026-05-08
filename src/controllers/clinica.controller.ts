@@ -282,3 +282,125 @@ export const actualizarEvaluacion = async (req: Request, res: Response) => {
 
   res.json({ success: true, data: updated });
 };
+
+
+// ══════════════════════════════════════════════════════════════
+// NOTAS DE SESIONES CLÍNICAS (PSICOLOGÍA, CONSEJERÍA, FAMILIA, SEGUIMIENTO)
+// ══════════════════════════════════════════════════════════════
+
+export const getNotasSesion = async (req: Request, res: Response) => {
+  const { expedienteId, tipo } = req.params;
+
+  const notas = await (prisma as any).notaSesionClinica.findMany({
+    where: {
+      expedienteId: parseInt(expedienteId, 10),
+      tipo
+    },
+    include: {
+      usuario: { select: { id: true, nombre: true, apellidos: true, rol: true } }
+    },
+    orderBy: { fecha: 'desc' }
+  });
+
+  res.json({ success: true, data: notas });
+};
+
+const ROLES_SESION: Record<string, string[]> = {
+  PSICOLOGIA:  ['PSICOLOGIA', 'ADMIN_GENERAL'],
+  CONSEJERIA:  ['PSICOLOGIA', 'ADMIN_GENERAL'],
+  FAMILIA:     ['PSICOLOGIA', 'ADMIN_GENERAL'],
+  SEGUIMIENTO: ['PSICOLOGIA', 'AREA_MEDICA', 'ADMIN_GENERAL'],
+};
+
+export const crearNotaSesion = async (req: Request, res: Response) => {
+  const { expedienteId, tipo } = req.params;
+  const usuarioId = req.usuario!.id;
+  const rolUsuario = req.usuario!.rol;
+  const { nota, fecha } = req.body;
+
+  if (!nota?.trim()) throw new AppError(400, 'El contenido de la nota es requerido');
+
+  const rolesPermitidos = ROLES_SESION[tipo] ?? [];
+  if (!rolesPermitidos.includes(rolUsuario)) {
+    throw new AppError(403, `No tienes permiso para registrar notas de ${tipo}`);
+  }
+
+  const expedienteIdInt = parseInt(expedienteId, 10);
+  const expediente = await prisma.expediente.findUnique({ where: { id: expedienteIdInt } });
+  if (!expediente) throw new AppError(404, 'Expediente no encontrado');
+
+  const notaSesion = await (prisma as any).notaSesionClinica.create({
+    data: {
+      expedienteId: expedienteIdInt,
+      usuarioId,
+      tipo,
+      nota: nota.trim(),
+      fecha: fecha ? new Date(fecha) : new Date()
+    },
+    include: {
+      usuario: { select: { id: true, nombre: true, apellidos: true, rol: true } }
+    }
+  });
+
+  await registrarAuditoria(
+    usuarioId, 'CREATE', `CLINICA_SESION_${tipo}`,
+    { notaId: notaSesion.id, expedienteId: expedienteIdInt },
+    req.ip
+  );
+
+  res.status(201).json({ success: true, data: notaSesion });
+};
+
+// ══════════════════════════════════════════════════════════════
+// PLAN NUTRICIONAL
+// ══════════════════════════════════════════════════════════════
+
+export const getPlanNutricional = async (req: Request, res: Response) => {
+  const { expedienteId } = req.params;
+
+  const plan = await (prisma as any).planNutricional.findUnique({
+    where: { expedienteId: parseInt(expedienteId, 10) },
+    include: {
+      usuario: { select: { id: true, nombre: true, apellidos: true } }
+    }
+  });
+
+  res.json({ success: true, data: plan });
+};
+
+export const upsertPlanNutricional = async (req: Request, res: Response) => {
+  const { expedienteId } = req.params;
+  const usuarioId = req.usuario!.id;
+  const { peso, talla, imc, diagnostico, objetivos, recomendaciones, restricciones, observaciones } = req.body;
+
+  const expedienteIdInt = parseInt(expedienteId, 10);
+  const expediente = await prisma.expediente.findUnique({ where: { id: expedienteIdInt } });
+  if (!expediente) throw new AppError(404, 'Expediente no encontrado');
+
+  const dataFields = {
+    peso:            peso !== undefined && peso !== ''            ? parseFloat(peso)   : undefined,
+    talla:           talla !== undefined && talla !== ''          ? parseFloat(talla)  : undefined,
+    imc:             imc !== undefined && imc !== ''              ? parseFloat(imc)    : undefined,
+    diagnostico:     diagnostico     ?? undefined,
+    objetivos:       objetivos       ?? undefined,
+    recomendaciones: recomendaciones ?? undefined,
+    restricciones:   restricciones   ?? undefined,
+    observaciones:   observaciones   ?? undefined,
+    usuarioId
+  };
+
+  const plan = await (prisma as any).planNutricional.upsert({
+    where: { expedienteId: expedienteIdInt },
+    update: dataFields,
+    create: { expedienteId: expedienteIdInt, ...dataFields },
+    include: { usuario: { select: { id: true, nombre: true, apellidos: true } } }
+  });
+
+  await registrarAuditoria(
+    usuarioId, 'UPDATE', 'CLINICA_NUTRICION',
+    { planId: plan.id, expedienteId: expedienteIdInt },
+    req.ip
+  );
+
+  res.json({ success: true, data: plan });
+};
