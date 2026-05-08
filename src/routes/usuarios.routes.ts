@@ -3,6 +3,7 @@ import { authenticate, authorize } from '../middlewares/auth';
 import { Rol } from '@prisma/client';
 import {
   getUsuarios,
+  getPersonalClinico,
   createUsuario,
   updateUsuario,
   toggleActivo,
@@ -11,6 +12,15 @@ import {
 
 const router = Router();
 
+// Personal clínico — accesible a Jefe Médico y Admin General (filtro por rol en el controller)
+router.get(
+  '/personal-clinico',
+  authenticate,
+  authorize(Rol.JEFE_MEDICO, Rol.ADMIN_GENERAL),
+  getPersonalClinico,
+);
+
+// El resto de endpoints solo ADMIN_GENERAL
 router.use(authenticate, authorize(Rol.ADMIN_GENERAL));
 
 router.get('/',                     getUsuarios);

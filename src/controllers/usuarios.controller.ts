@@ -19,6 +19,26 @@ const updateSchema = z.object({
   rol:       z.nativeEnum(Rol).optional(),
 });
 
+const ROLES_CLINICOS_JEFE  = [Rol.AREA_MEDICA, Rol.ENFERMERIA, Rol.NUTRICION, Rol.PSICOLOGIA];
+const ROLES_CLINICOS_ADMIN = [Rol.AREA_MEDICA, Rol.JEFE_MEDICO, Rol.ENFERMERIA, Rol.NUTRICION, Rol.PSICOLOGIA];
+
+export const getPersonalClinico = async (req: Request, res: Response) => {
+  const rolSolicitante = req.usuario!.rol;
+  const rolesPermitidos = rolSolicitante === Rol.JEFE_MEDICO
+    ? ROLES_CLINICOS_JEFE
+    : ROLES_CLINICOS_ADMIN;
+
+  const personal = await prisma.usuario.findMany({
+    where: { deletedAt: null, rol: { in: rolesPermitidos } },
+    select: {
+      id: true, nombre: true, apellidos: true,
+      correo: true, rol: true, activo: true, ultimoAcceso: true,
+    },
+    orderBy: { nombre: 'asc' },
+  });
+  res.json({ success: true, data: personal });
+};
+
 export const getUsuarios = async (_req: Request, res: Response) => {
   const usuarios = await prisma.usuario.findMany({
     where: { deletedAt: null },

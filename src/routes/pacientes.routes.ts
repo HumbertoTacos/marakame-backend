@@ -32,6 +32,12 @@ router.get('/:id', pacientesController.getPacienteById);
 router.patch('/:id/detox', pacientesController.enviarADetox);
 
 /**
+ * @route PATCH /api/v1/pacientes/:id/finalizar-detox
+ * @desc Finalizar desintoxicación: cambia estado de DETOX a INTERNADO
+ */
+router.patch('/:id/finalizar-detox', pacientesController.finalizarDetox);
+
+/**
  * @route PATCH /api/v1/pacientes/:id/archivar
  * @desc Borrado lógico — marca deletedAt para archivar el registro
  */

@@ -27,6 +27,7 @@ import clinicaRoutes from './routes/clinica.routes';
 import inventarioRoutes from './routes/inventario.routes';
 import egresoRoutes from './routes/egreso.routes';
 import notificacionesRoutes from './routes/notificaciones.routes';
+import solicitudesMedicasRoutes from './routes/solicitudesMedicas.routes';
 
 dotenv.config();
 
@@ -68,7 +69,8 @@ app.use(`${API}/actividades`,    actividadesRoutes);
 app.use(`${API}/clinica`,        clinicaRoutes);
 app.use(`${API}/inventario`,     inventarioRoutes);
 app.use(`${API}/egreso`,         egresoRoutes);
-app.use(`${API}/notificaciones`, notificacionesRoutes);
+app.use(`${API}/notificaciones`,     notificacionesRoutes);
+app.use(`${API}/solicitudes-medicas`, solicitudesMedicasRoutes);
 
 // Health check (indicador de red local)
 app.get('/health', (_req, res) => {

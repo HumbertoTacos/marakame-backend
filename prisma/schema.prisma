@@ -69,6 +69,7 @@ model Usuario {
   ingresos        Ingreso[]
   egresosAutorizados EgresoRegistro[]
   notificaciones     Notificacion[]
+  solicitudesMedicas SolicitudMedica[]
 
   @@map("usuarios")
 }
@@ -900,6 +901,27 @@ model CitaAgenda {
   especialista Usuario  @relation(fields: [especialistaId], references: [id])
 
   @@map("citas_agenda")
+}
+
+// ============================================================
+// SOLICITUDES MÉDICAS INTERNAS
+// ============================================================
+
+enum EstadoSolicitudMedica {
+  PENDIENTE
+  ATENDIDA
+}
+
+model SolicitudMedica {
+  id        Int                   @id @default(autoincrement())
+  emisorId  Int
+  emisor    Usuario               @relation(fields: [emisorId], references: [id])
+  contenido String                @db.Text
+  tipo      String                // REABASTECIMIENTO, MATERIAL_CURACION, REPORTE, OTRO
+  estado    EstadoSolicitudMedica @default(PENDIENTE)
+  createdAt DateTime              @default(now())
+
+  @@map("solicitudes_medicas")
 }
 
 // ============================================================
