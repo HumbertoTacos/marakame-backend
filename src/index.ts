@@ -23,6 +23,7 @@ import usuariosRoutes from './routes/usuarios.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import clinicaRoutes from './routes/clinica.routes';
 import egresoRoutes from './routes/egreso.routes';
+import contraReciboRoutes from './routes/contraRecibo.routes';
 
 dotenv.config();
 
@@ -52,6 +53,7 @@ app.use(`${API}/pacientes`,  pacientesRoutes);
 app.use(`${API}/admisiones`, admisionesRoutes);
 app.use(`${API}/expedientes`, expedientesRoutes);
 app.use(`${API}/almacen`,    almacenRoutes);
+app.use(`${API}/contra-recibos`, contraReciboRoutes);
 app.use(`${API}/compras`,    comprasRoutes);
 app.use(`${API}/nominas`,    nominasRoutes);
 app.use(`${API}/documentos`, documentosRoutes);
