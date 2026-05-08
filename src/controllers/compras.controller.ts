@@ -4,6 +4,7 @@ import { AppError } from '../middlewares/errorHandler';
 import { EstadoCompra, TipoCompra } from '@prisma/client';
 import { permisosEstado } from '../utils/comprasPermissions';
 import multer from 'multer';
+import { crearNotificacion } from '../utils/notificaciones';
 
 // ============================================================
 // HELPERS
@@ -252,6 +253,14 @@ export const createRequisicion = async (
     EstadoCompra.REQUISICION_CREADA,
     usuarioId
   );
+
+  await crearNotificacion({
+    titulo: 'Nueva Requisición de Compra',
+    mensaje: `El área de ${areaSolicitante} ha solicitado una nueva compra (Folio: ${folio}).`,
+    tipo: 'INFO',
+    rol: 'RRHH_FINANZAS',
+    link: '/compras'
+  });
 
   res.status(201).json({
     success: true,
