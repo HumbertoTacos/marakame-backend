@@ -47,18 +47,26 @@ model Usuario {
   comprasCreadas     CompraRequisicion[]
   nominasAutorizadas Nomina[]
   auditoria          Auditoria[]
+  historialCompras   CompraHistorial[]
+  ordenesElaboradas  CompraOrden[]           @relation("OrdenElaborada")
+  ordenesRevisadas   CompraOrden[]           @relation("OrdenRevisada")
+  ordenesAutorizadas CompraOrden[]           @relation("OrdenAutorizada")
 
   // Relaciones Clínicas
   notasEvolucion        NotaEvolucion[]
   signosTomados         SignoVital[]
   tratamientosRecetados TratamientoMedico[]
   suministrosAplicados  SuministroTratamiento[]
+  evaluacionesAplicadas EvaluacionResultado[]
+  sesionesClinicas      NotaSesionClinica[]
+  planesNutricionales   PlanNutricional[]
 
   // Relaciones Financieras y Citas
   pagosRecibidos  PagoPaciente[]
   cargosAplicados CargoPaciente[]
   citasAsignadas  CitaAgenda[]
   ingresos        Ingreso[]
+  egresosAutorizados EgresoRegistro[]
 
   @@map("usuarios")
 }
@@ -101,49 +109,48 @@ enum EstadoDocumentoExpediente {
 }
 
 model Paciente {
-  id              Int            @id @default(autoincrement())
+  id                   Int            @id @default(autoincrement())
   // Datos básicos
-  claveUnica Int                @unique // Número cronológico simple
-  nombre          String
-  apellidoPaterno String
-  apellidoMaterno String
-  fechaNacimiento DateTime
-  sexo            String // M / F
-  curp            String?        @unique
-  estadoCivil     String?
-  hijos           Int?
-  escolaridad     String?
-  lugarOrigen     String?
-  ocupacion       String?
+  claveUnica           Int            @unique // Número cronológico simple
+  nombre               String
+  apellidoPaterno      String
+  apellidoMaterno      String
+  fechaNacimiento      DateTime
+  sexo                 String // M / F
+  curp                 String?        @unique
+  estadoCivil          String?
+  hijos                Int?
+  escolaridad          String?
+  lugarOrigen          String?
+  ocupacion            String?
   // Contacto
-  telefono        String?
-  celular         String?
-  direccion       String?
+  telefono             String?
+  celular              String?
+  direccion            String?
   // Estado
-  estado          EstadoPaciente @default(PROSPECTO)
+  estado               EstadoPaciente @default(PROSPECTO)
   // Datos Médicos / Ingreso
-  tipoAdiccion    TipoAdiccion?  @default(ALCOHOL)
-  tiempoConsumo   String?
-  ultimoConsumo   DateTime?
-  motivoIngreso   String?        @db.Text
-  antecedentesMedicos String?    @db.Text
-  tratamientosPrevios Boolean    @default(false)
-  detallesTratamientos String?   @db.Text
-  areaDeseada         AreaCentro?
+  tipoAdiccion         TipoAdiccion?  @default(ALCOHOL)
+  tiempoConsumo        String?
+  ultimoConsumo        DateTime?
+  motivoIngreso        String?        @db.Text
+  antecedentesMedicos  String?        @db.Text
+  tratamientosPrevios  Boolean        @default(false)
+  detallesTratamientos String?        @db.Text
+  areaDeseada          AreaCentro?
   // Sustancias (del primer contacto)
-  // Sustancias (del primer contacto)
-  sustancias      String[]
-  
+  sustancias           String[]
+
   // Nuevos campos de Gestión de Ingreso
-  nivelTratamiento     Int            @default(1)
+  nivelTratamiento     Int       @default(1)
   fechaIngreso         DateTime?
   fechaEgresoPrevista  DateTime?
   totalDiasTratamiento Int?
 
   // Timestamps
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  deletedAt       DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   // Relaciones
   familiar               FamiliarResponsable?
@@ -161,18 +168,20 @@ model Paciente {
   // Cama (1 to 1)
   cama Cama?
 
+  egresoRegistro EgresoRegistro?
+
   // Relaciones Modulo Finanzas y Agenda
-  pagos  PagoPaciente[]
-  cargos CargoPaciente[]
-  citas  CitaAgenda[]
+  pagos    PagoPaciente[]
+  cargos   CargoPaciente[]
+  citas    CitaAgenda[]
   ingresos Ingreso[]
 
   @@map("pacientes")
 }
 
 model FamiliarResponsable {
-  id          Int      @id @default(autoincrement())
-  pacienteId  Int      @unique
+  id          Int     @id @default(autoincrement())
+  pacienteId  Int     @unique
   nombre      String
   parentesco  String
   telefono    String?
@@ -184,7 +193,7 @@ model FamiliarResponsable {
   estado      String?
   ocupacion   String?
 
-  paciente    Paciente @relation(fields: [pacienteId], references: [id])
+  paciente    Paciente           @relation(fields: [pacienteId], references: [id])
   solicitudes SolicitudIngreso[]
 
   @@map("familiares_responsables")
@@ -229,64 +238,64 @@ model Sustancia {
 }
 
 model PrimerContacto {
-  id                      Int               @id @default(autoincrement())
+  id                      Int                     @id @default(autoincrement())
   pacienteId              Int
   usuarioId               Int
   // 1-3. Generales
-  fecha                   DateTime          @default(now())
+  fecha                   DateTime                @default(now())
   hora                    String?
   medioEnterado           String?
   // 4-9. Datos del Solicitante
-  nombreLlamada           String?           // 4) Nombre
-  lugarLlamada            String?           // 5) Lugar
-  domicilioLlamada        String?           // 6) Dirección
-  telCasaLlamada          String?           // 7) Tel Casa
-  celularLlamada          String?           // 8) Celular
-  ocupacionLlamada        String?           // 9) Ocupación
+  nombreLlamada           String? // 4) Nombre
+  lugarLlamada            String? // 5) Lugar
+  domicilioLlamada        String? // 6) Dirección
+  telCasaLlamada          String? // 7) Tel Casa
+  celularLlamada          String? // 8) Celular
+  ocupacionLlamada        String? // 9) Ocupación
   // 10-19. Datos del Prospecto
-  parentescoLlamada       String?           // 10) Relación (Select)
-  parentescoOtro          String?           // 10) Especificar si es OTRO
-  nombrePaciente          String?           // 11) Nombre
-  edadPaciente            Int?              // 12) Edad
-  estadoCivilPaciente     String?           // 13) Edo Civil
-  hijosPaciente           Int?              // 14) Hijos
-  direccionPaciente       String?           // 15) Dirección
-  escolaridadPaciente     String?           // 16) Escolaridad
-  origenPaciente          String?           // 17) Origen
-  telefonoPaciente        String?           // 18) Tel
-  ocupacionPaciente       String?           // 19) Ocupación
+  parentescoLlamada       String? // 10) Relación (Select)
+  parentescoOtro          String? // 10) Especificar si es OTRO
+  nombrePaciente          String? // 11) Nombre
+  edadPaciente            Int? // 12) Edad
+  estadoCivilPaciente     String? // 13) Edo Civil
+  hijosPaciente           Int? // 14) Hijos
+  direccionPaciente       String? // 15) Dirección
+  escolaridadPaciente     String? // 16) Escolaridad
+  origenPaciente          String? // 17) Origen
+  telefonoPaciente        String? // 18) Tel
+  ocupacionPaciente       String? // 19) Ocupación
   // 20. Sustancias
-  sustancias              String[]          // Array de nombres del catálogo
-  sustanciasOtros         String[]          // Array dinámico de otros
+  sustancias              String[] // Array de nombres del catálogo
+  sustanciasOtros         String[] // Array dinámico de otros
   // 21-23. Disposición y Antecedentes
-  dispuestoInternarse     String?           // 21) SI/NO/DUDA
-  realizoIntervencion     String?           // 22) SI/NO
-  conclusionIntervencion  String?           // 22) Conclusión
-  tratamientoPrevio       String?           // 23) SI/NO
-  lugarTratamiento        String?           // 23) Donde
+  dispuestoInternarse     String? // 21) SI/NO/DUDA
+  realizoIntervencion     String? // 22) SI/NO
+  conclusionIntervencion  String? // 22) Conclusión
+  tratamientoPrevio       String? // 23) SI/NO
+  lugarTratamiento        String? // 23) Donde
   // 24. Otros
-  posibilidadesEconomicas String?           // 24) Posibilidades
+  posibilidadesEconomicas String? // 24) Posibilidades
   // 25-29. Acuerdos Literales
-  acuerdoLlamarle         Boolean           @default(false) // 25
-  acuerdoOtro             String?           // 26
-  acuerdoEsperarLlamada   Boolean           @default(false) // 27
-  acuerdoEsperarVisita    Boolean           @default(false) // 28
-  acuerdoPosibleIngreso   Boolean           @default(false) // 29
+  acuerdoLlamarle         Boolean                 @default(false) // 25
+  acuerdoOtro             String? // 26
+  acuerdoEsperarLlamada   Boolean                 @default(false) // 27
+  acuerdoEsperarVisita    Boolean                 @default(false) // 28
+  acuerdoPosibleIngreso   Boolean                 @default(false) // 29
   // CRM Tracking
   acuerdoSeguimiento      TipoAcuerdoSeguimiento? @default(ESPERAR_LLAMADA)
   fechaAcuerdo            DateTime?
   // 30-31. Cierre Médico
-  medicoValoro      String?           // 30
-  conclusionMedica  String?           @db.Text // 31
-  esApto            Boolean?          @default(true)
-  
+  medicoValoro            String? // 30
+  conclusionMedica        String?                 @db.Text // 31
+  esApto                  Boolean?                @default(true)
+
   // Datos clínicos para herencia a valoración
-  edadInicioConsumo       Int?
-  sintomasReportados      String?           @db.Text
-  
+  edadInicioConsumo  Int?
+  sintomasReportados String? @db.Text
+
   // Timestamps, Estado y Relaciones
-  activo                  Boolean           @default(true)
-  createdAt               DateTime          @default(now())
+  activo     Boolean     @default(true)
+  createdAt  DateTime    @default(now())
   paciente   Paciente    @relation(fields: [pacienteId], references: [id])
   usuario    Usuario     @relation(fields: [usuarioId], references: [id])
   documentos Documento[]
@@ -325,53 +334,83 @@ model ValoracionDiagnostica {
 }
 
 model ValoracionMedica {
-  id                            Int               @id @default(autoincrement())
-  pacienteId                    Int               @unique
-  paciente                      Paciente          @relation(fields: [pacienteId], references: [id])
-  
-  estado                        EstadoValoracion  @default(BORRADOR)
-  documentoFirmadoUrl           String?
-  
+  id         Int      @id @default(autoincrement())
+  pacienteId Int      @unique
+  paciente   Paciente @relation(fields: [pacienteId], references: [id])
+
+  estado              EstadoValoracion @default(BORRADOR)
+  documentoFirmadoUrl String?
+
   // Datos de Control de la Valoración
-  residente                     String?
-  tipoValoracion                String?           // PRESENCIAL o TELEFONICA
-  fechaValoracion               DateTime?
-  horaValoracion                String?
-  
+  residente       String?
+  tipoValoracion  String? // PRESENCIAL o TELEFONICA
+  fechaValoracion DateTime?
+  horaValoracion  String?
+
   // Historia Clínica (Captura Extensa)
-  motivoConsulta                String?           @db.Text
-  padecimientoActual             String?           @db.Text
-  sintomasGenerales             String?           @db.Text
-  tratamientosPrevios           String?           @db.Text
-  
-  antecedentesHeredofamiliares  String?           @db.Text
-  antecedentesPatologicos       String?           @db.Text
-  antecedentesNoPatologicos     String?           @db.Text
-  
+  motivoConsulta      String? @db.Text
+  padecimientoActual  String? @db.Text
+  sintomasGenerales   String? @db.Text
+  tratamientosPrevios String? @db.Text
+
+  antecedentesHeredofamiliares String? @db.Text
+  antecedentesPatologicos      String? @db.Text
+  antecedentesNoPatologicos    String? @db.Text
+
   // Historia de Consumo
-  historialConsumo              String?           @db.Text
-  
+  historialConsumo String? @db.Text
+
   // Exploración Física (Signos Vitales Granulares)
-  tensionArterial               String?
-  frecuenciaCardiaca            String?
-  frecuenciaRespiratoria        String?
-  temperatura                   String?
-  peso                          String?
-  talla                         String?
-  exploracionFisicaDesc         String?           @db.Text
-  
+  tensionArterial        String?
+  frecuenciaCardiaca     String?
+  frecuenciaRespiratoria String?
+  temperatura            String?
+  peso                   String?
+  talla                  String?
+  exploracionFisicaDesc  String? @db.Text
+
   // Examen Mental y Conclusión
-  examenMental                  String?           @db.Text
-  impresionDiagnostica           String?           @db.Text
-  pronostico                    String?           @db.Text
-  planTratamiento               String?           @db.Text
-  
-  esAptoParaIngreso             Boolean           @default(false)
-  
-  createdAt                     DateTime          @default(now())
-  updatedAt                     DateTime          @updatedAt
+  examenMental         String? @db.Text
+  impresionDiagnostica String? @db.Text
+  pronostico           String? @db.Text
+  planTratamiento      String? @db.Text
+
+  esAptoParaIngreso Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("valoraciones_medicas")
+}
+
+// ============================================================
+// EGRESO DE PACIENTE
+// ============================================================
+
+enum TipoEgreso {
+  ALTA_MEDICA        // Completó el tratamiento, autorizado por el médico
+  ALTA_VOLUNTARIA    // El paciente decidió retirarse antes de concluir
+  EXPULSION          // Retiro por sanción disciplinaria
+  FUGA               // Se retiró sin autorización del personal
+  TRASLADO           // Canalizado a otra institución especializada
+}
+
+model EgresoRegistro {
+  id                     Int        @id @default(autoincrement())
+  pacienteId             Int        @unique
+  fechaEgreso            DateTime   @default(now())
+  tipoEgreso             TipoEgreso
+  notaMedica             String?    @db.Text
+  saldoPendiente         Float      @default(0)
+  pertenenciasEntregadas Boolean    @default(false)
+  inscritoReforzamiento  Boolean    @default(false)
+  autorizadoPorId        Int
+  createdAt              DateTime   @default(now())
+
+  paciente      Paciente @relation(fields: [pacienteId], references: [id])
+  autorizadoPor Usuario  @relation(fields: [autorizadoPorId], references: [id])
+
+  @@map("egresos_registros")
 }
 
 // ============================================================
@@ -385,17 +424,17 @@ enum EstadoProgramaReforzamiento {
 }
 
 model ProgramaReforzamiento {
-  id                Int                         @id @default(autoincrement())
-  pacienteId        Int                         @unique
-  fechaInicio       DateTime
-  fechaFinEstimada  DateTime
-  estado            EstadoProgramaReforzamiento @default(ACTIVO)
-  observaciones     String?                     @db.Text
-  
-  createdAt         DateTime                    @default(now())
-  updatedAt         DateTime                    @updatedAt
+  id               Int                         @id @default(autoincrement())
+  pacienteId       Int                         @unique
+  fechaInicio      DateTime
+  fechaFinEstimada DateTime
+  estado           EstadoProgramaReforzamiento @default(ACTIVO)
+  observaciones    String?                     @db.Text
 
-  paciente          Paciente                    @relation(fields: [pacienteId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  paciente Paciente @relation(fields: [pacienteId], references: [id])
 
   @@map("programas_reforzamiento")
 }
@@ -426,24 +465,24 @@ enum EstadoIngreso {
 }
 
 model SolicitudIngreso {
-  id              Int             @id @default(autoincrement())
-  folio           String          @unique // Generado ADM-YYYY-NNN
-  estado          EstadoSolicitud @default(PENDIENTE)
-  urgencia        NivelUrgencia   @default(BAJA)
-  observaciones   String?         @db.Text
-  motivoRechazo   String?         @db.Text
+  id            Int             @id @default(autoincrement())
+  folio         String          @unique // Generado ADM-YYYY-NNN
+  estado        EstadoSolicitud @default(PENDIENTE)
+  urgencia      NivelUrgencia   @default(BAJA)
+  observaciones String?         @db.Text
+  motivoRechazo String?         @db.Text
 
   // Relaciones
-  solicitante     FamiliarResponsable @relation(fields: [solicitanteId], references: [id])
-  solicitanteId   Int
-  paciente        Paciente            @relation(fields: [pacienteId], references: [id])
-  pacienteId      Int
-  creadoPorId     Int                 // ID del usuario (staff) que registró la solicitud
+  solicitante   FamiliarResponsable @relation(fields: [solicitanteId], references: [id])
+  solicitanteId Int
+  paciente      Paciente            @relation(fields: [pacienteId], references: [id])
+  pacienteId    Int
+  creadoPorId   Int // ID del usuario (staff) que registró la solicitud
 
-  asignacionCama  AsignacionCama?
+  asignacionCama AsignacionCama?
 
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("solicitudes_ingreso")
 }
@@ -456,43 +495,43 @@ model AsignacionCama {
   medicoResponsableNom String
 
   // Relaciones
-  solicitud            SolicitudIngreso @relation(fields: [solicitudId], references: [id])
-  solicitudId          Int              @unique
-  cama                 Cama             @relation(fields: [camaId], references: [id])
-  camaId               Int
+  solicitud   SolicitudIngreso @relation(fields: [solicitudId], references: [id])
+  solicitudId Int              @unique
+  cama        Cama             @relation(fields: [camaId], references: [id])
+  camaId      Int
 
-  createdAt            DateTime         @default(now())
+  createdAt DateTime @default(now())
 
   @@map("asignaciones_cama")
 }
 
 model Ingreso {
-  id                      Int            @id @default(autoincrement())
-  pacienteId              Int
-  usuarioId               Int
-  motivoIngreso           String?        @db.Text
-  estado                  EstadoIngreso  @default(EN_PROCESO)
-  pasoActual              Int            @default(1)
-  
+  id            Int           @id @default(autoincrement())
+  pacienteId    Int
+  usuarioId     Int
+  motivoIngreso String?       @db.Text
+  estado        EstadoIngreso @default(EN_PROCESO)
+  pasoActual    Int           @default(1)
+
   // Datos de la cita / valoración (Wizard steps)
   fechaCita               DateTime?
   horaCita                String?
   medicoAsignado          String?
-  resultadoValoracion     String?        @db.Text
-  observacionesValoracion String?        @db.Text
+  resultadoValoracion     String?   @db.Text
+  observacionesValoracion String?   @db.Text
   esApto                  Boolean?
-  motivoNoApto            String?        @db.Text
-  
-  // Asignación final (Step 8)
-  habitacionAsignada      String?
-  areaAsignada            String?
-  fechaIngreso            DateTime?
-  
-  createdAt               DateTime       @default(now())
-  updatedAt               DateTime       @updatedAt
+  motivoNoApto            String?   @db.Text
 
-  paciente                Paciente       @relation(fields: [pacienteId], references: [id])
-  usuario                 Usuario        @relation(fields: [usuarioId], references: [id])
+  // Asignación final (Step 8)
+  habitacionAsignada String?
+  areaAsignada       String?
+  fechaIngreso       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  paciente Paciente @relation(fields: [pacienteId], references: [id])
+  usuario  Usuario  @relation(fields: [usuarioId], references: [id])
 
   @@map("ingresos")
 }
@@ -502,20 +541,20 @@ model Ingreso {
 // ============================================================
 
 model EstudioSocioeconomico {
-  id                  Int      @id @default(autoincrement())
-  pacienteId          Int      @unique
-  seccionActual       Int      @default(1)
-  completado          Boolean  @default(false)
-  datos               Json // Todas las 16 secciones en JSON flexible
-  
+  id            Int     @id @default(autoincrement())
+  pacienteId    Int     @unique
+  seccionActual Int     @default(1)
+  completado    Boolean @default(false)
+  datos         Json // Todas las 16 secciones en JSON flexible
+
   // Campos obligatorios para lógica institucional y reportes
-  ingresoMensualRango String?
+  ingresoMensualRango     String?
   numeroHabitacionesRango String?
-  tieneMasDeUnaVivienda Boolean?  @default(false)
-  pisoMaterial        String?
-  murosMaterial       String?
-  techoMaterial       String?
-  totalEgresosCalculado Float?
+  tieneMasDeUnaVivienda   Boolean? @default(false)
+  pisoMaterial            String?
+  murosMaterial           String?
+  techoMaterial           String?
+  totalEgresosCalculado   Float?
 
   nivelSocioeconomico String?
   puntajeCalculado    Float?
@@ -568,9 +607,11 @@ model Expediente {
   paciente Paciente @relation(fields: [pacienteId], references: [id])
 
   // Nuevas tablas relacionales clínicas
-  notasEvolucion NotaEvolucion[]
-  signosVitales  SignoVital[]
-  tratamientos   TratamientoMedico[]
+  notasEvolucion   NotaEvolucion[]
+  signosVitales    SignoVital[]
+  tratamientos     TratamientoMedico[]
+  sesionesClinicas NotaSesionClinica[]
+  planNutricional  PlanNutricional?
 
   @@map("expedientes")
 }
@@ -650,6 +691,56 @@ model SuministroTratamiento {
   enfermero   Usuario           @relation(fields: [enfermeroId], references: [id])
 
   @@map("suministros_tratamientos")
+}
+
+// ============================================================
+// NOTAS DE SESIONES CLÍNICAS (PSICOLOGÍA, CONSEJERÍA, FAMILIA, SEGUIMIENTO)
+// ============================================================
+
+enum TipoSesion {
+  PSICOLOGIA
+  CONSEJERIA
+  FAMILIA
+  SEGUIMIENTO
+}
+
+model NotaSesionClinica {
+  id           Int        @id @default(autoincrement())
+  expedienteId Int
+  usuarioId    Int
+  tipo         TipoSesion
+  nota         String     @db.Text
+  fecha        DateTime   @default(now())
+
+  expediente Expediente @relation(fields: [expedienteId], references: [id])
+  usuario    Usuario    @relation(fields: [usuarioId], references: [id])
+
+  @@map("notas_sesiones_clinicas")
+}
+
+// ============================================================
+// PLAN NUTRICIONAL
+// ============================================================
+
+model PlanNutricional {
+  id              Int      @id @default(autoincrement())
+  expedienteId    Int      @unique
+  usuarioId       Int
+  peso            Float?
+  talla           Float?
+  imc             Float?
+  diagnostico     String?  @db.Text
+  objetivos       String?  @db.Text
+  recomendaciones String?  @db.Text
+  restricciones   String?  @db.Text
+  observaciones   String?  @db.Text
+  fechaEvaluacion DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  expediente Expediente @relation(fields: [expedienteId], references: [id])
+  usuario    Usuario    @relation(fields: [usuarioId], references: [id])
+
+  @@map("planes_nutricionales")
 }
 
 // ============================================================
@@ -829,17 +920,17 @@ model Habitacion {
 }
 
 model Cama {
-  id            Int         @id @default(autoincrement())
-  codigo        String?     @unique // Ej: "H-01", "M-05"
-  numero        String      @unique
-  estado        EstadoCama  @default(DISPONIBLE)
-  descripcion   String?
-  pacienteId    Int?        @unique
-  habitacionId  Int?
-  
-  habitacion    Habitacion?  @relation(fields: [habitacionId], references: [id])
-  paciente      Paciente?   @relation(fields: [pacienteId], references: [id])
-  asignaciones  AsignacionCama[]
+  id           Int        @id @default(autoincrement())
+  codigo       String?    @unique // Ej: "H-01", "M-05"
+  numero       String     @unique
+  estado       EstadoCama @default(DISPONIBLE)
+  descripcion  String?
+  pacienteId   Int?       @unique
+  habitacionId Int?
+
+  habitacion   Habitacion?      @relation(fields: [habitacionId], references: [id])
+  paciente     Paciente?        @relation(fields: [pacienteId], references: [id])
+  asignaciones AsignacionCama[]
 
   @@map("camas")
 }
@@ -915,33 +1006,61 @@ model AlmacenMovimiento {
 // ============================================================
 
 enum EstadoCompra {
-  BORRADOR
-  PENDIENTE_COTIZACION
-  EN_COMPARATIVO
-  PENDIENTE_AUTORIZACION
-  AUTORIZADO
-  RECHAZADO
+  REQUISICION_CREADA
+  REQUISICION_REVISADA
+  COTIZACIONES_CARGADAS
+  PROVEEDOR_SELECCIONADO
+  NEGOCIACION_COMPLETADA
+  EN_REVISION_ADMIN
+  EN_AUTORIZACION_DIRECCION
+  AUTORIZADA
   ORDEN_GENERADA
+  FACTURAS_RECIBIDAS
+  PAGO_GENERADO
+  FINALIZADO
+  RECHAZADO
+}
+
+enum TipoCompra {
+  ORDINARIA
+  EXTRAORDINARIA
 }
 
 model CompraRequisicion {
-  id                  Int          @id @default(autoincrement())
-  folio               String       @unique
-  usuarioId           Int
+  id        Int    @id @default(autoincrement())
+  folio     String @unique
+  usuarioId Int
+
+  tipo   TipoCompra
+  estado EstadoCompra @default(REQUISICION_CREADA)
+
   areaSolicitante     String
   descripcion         String
   justificacion       String
   presupuestoEstimado Float?
-  estado              EstadoCompra @default(BORRADOR)
-  usuarioAutorizaId   Int?
-  observacionesVoBo   String?
-  fechaAutorizacion   DateTime?
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  totalFinal          Float?
 
-  usuario      Usuario            @relation(fields: [usuarioId], references: [id])
+  proveedorSeleccionado String?
+  formaPago             String?
+  tipoCredito           String?
+
+  usuarioAutorizaId Int?
+
+  observacionesVoBo String?
+  fechaAutorizacion DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
+
   cotizaciones CompraCotizacion[]
   ordenCompra  CompraOrden?
+  facturas     CompraFactura[]
+  pago         CompraPago?
+
+  detalles  CompraDetalle[]
+  historial CompraHistorial[]
 
   @@map("compras_requisiciones")
 }
@@ -953,6 +1072,8 @@ model CompraCotizacion {
   precio        Float
   tiempoEntrega String?
   esMejorOpcion Boolean  @default(false)
+  formaPago     String?
+  tipoCredito   String?
   documentoUrl  String?
   createdAt     DateTime @default(now())
 
@@ -962,57 +1083,161 @@ model CompraCotizacion {
 }
 
 model CompraOrden {
+  id Int @id @default(autoincrement())
+
+  requisicionId Int               @unique
+  requisicion   CompraRequisicion @relation(fields: [requisicionId], references: [id])
+
+  folio String
+  fecha DateTime @default(now())
+
+  proveedor String
+  total     Float
+
+  elaboradoPorId  Int?
+  revisadoPorId   Int?
+  autorizadoPorId Int?
+
+  elaboradoPor  Usuario? @relation("OrdenElaborada", fields: [elaboradoPorId], references: [id])
+  revisadoPor   Usuario? @relation("OrdenRevisada", fields: [revisadoPorId], references: [id])
+  autorizadoPor Usuario? @relation("OrdenAutorizada", fields: [autorizadoPorId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+model CompraFactura {
   id            Int      @id @default(autoincrement())
-  requisicionId Int      @unique
-  proveedor     String
-  total         Float
+  requisicionId Int
+  numero        String
+  monto         Float
   documentoUrl  String?
   createdAt     DateTime @default(now())
 
   requisicion CompraRequisicion @relation(fields: [requisicionId], references: [id])
 
-  @@map("compras_ordenes")
+  @@map("compras_facturas")
+}
+
+model CompraPago {
+  id            Int      @id @default(autoincrement())
+  requisicionId Int      @unique
+  total         Float
+  fecha         DateTime @default(now())
+
+  requisicion CompraRequisicion @relation(fields: [requisicionId], references: [id])
+
+  @@map("compras_pagos")
+}
+
+model CompraDetalle {
+  id            Int    @id @default(autoincrement())
+  requisicionId Int
+  numero        Int
+  producto      String
+  unidad        String
+  cantidad      Int
+
+  requisicion CompraRequisicion @relation(fields: [requisicionId], references: [id])
+
+  @@map("compras_detalles")
+}
+
+model CompraHistorial {
+  id            Int          @id @default(autoincrement())
+  requisicionId Int
+  estado        EstadoCompra
+  fecha         DateTime     @default(now())
+  usuarioId     Int
+
+  requisicion CompraRequisicion @relation(fields: [requisicionId], references: [id])
+  usuario     Usuario           @relation(fields: [usuarioId], references: [id])
+
+  @@map("compras_historial")
 }
 
 // ============================================================
-// NÓMINAS
+// NÓMINAS Y RECURSOS HUMANOS (CORREGIDO SEGÚN MANUAL)
 // ============================================================
+
+enum RegimenLaboral {
+  CONFIANZA
+  LISTA_RAYA
+}
 
 enum EstadoNomina {
   BORRADOR
-  PENDIENTE
+  PRE_NOMINA
+  SOLICITUD_SUBSIDIO
+  EN_REVISION
   AUTORIZADO
   PAGADO
 }
 
-model Empleado {
-  id           Int       @id @default(autoincrement())
-  nombre       String
-  apellidos    String
-  puesto       String
-  departamento String
-  salarioBase  Float
-  activo       Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+enum TipoIncidencia {
+  INASISTENCIA
+  RETARDO
+  SALIDA_ANTICIPADA
+  FALTA_JUSTIFICADA
+}
 
-  prenominas PreNomina[]
+model Empleado {
+  id               Int            @id @default(autoincrement())
+  nombre           String
+  apellidos        String
+  puesto           String
+  departamento     String
+  regimen          RegimenLaboral @default(CONFIANZA)
+  salarioBase      Float
+  compensacionFija Float?         @default(0)
+  activo           Boolean        @default(true)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  prenominas  PreNomina[]
+  incidencias IncidenciaNomina[]
 
   @@map("empleados")
 }
 
+model IncidenciaNomina {
+  id                 Int            @id @default(autoincrement())
+  empleadoId         Int
+  fecha              DateTime
+  tipo               TipoIncidencia
+  minutosRetardo     Int?
+  justificada        Boolean        @default(false)
+  vistoBuenoJefe     Boolean        @default(false)
+  documentoJustifUrl String?
+  descuentoAplicar   Float          @default(0)
+  aplicadoEnNominaId Int?
+  createdAt          DateTime       @default(now())
+
+  empleado Empleado @relation(fields: [empleadoId], references: [id])
+
+  @@map("incidencias_nomina")
+}
+
 model Nomina {
-  id                Int          @id @default(autoincrement())
-  folio             String       @unique
-  periodo           String // Ej: "Primera Quincena Marzo 2024"
-  fechaInicio       DateTime
-  fechaFin          DateTime
-  estado            EstadoNomina @default(BORRADOR)
-  usuarioAutorizaId Int?
-  fechaAutorizacion DateTime?
-  totalGeneral      Float?       @default(0)
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  id                     Int          @id @default(autoincrement())
+  folio                  String       @unique
+  periodo                String
+  fechaInicio            DateTime
+  fechaFin               DateTime
+  estado                 EstadoNomina @default(BORRADOR)
+  usuarioAutorizaId      Int?
+  fechaAutorizacion      DateTime?
+  firmaRecursosHumanos   Boolean      @default(false)
+  firmaFinanzas          Boolean      @default(false)
+  firmaAdministracion    Boolean      @default(false)
+  firmaDireccion         Boolean      @default(false)
+  fechaSolicitudSubsidio DateTime?
+  fechaRecepcionRecurso  DateTime?
+  totalPercepciones      Float?       @default(0)
+  totalDeducciones       Float?       @default(0)
+  totalNetoPagar         Float?       @default(0)
+  totalGeneral           Float?       @default(0)
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
 
   usuarioAutoriza Usuario?    @relation(fields: [usuarioAutorizaId], references: [id])
   prenominas      PreNomina[]
@@ -1021,16 +1246,23 @@ model Nomina {
 }
 
 model PreNomina {
-  id             Int   @id @default(autoincrement())
-  nominaId       Int
-  empleadoId     Int
-  diasTrabajados Float @default(15)
-  horasExtra     Float @default(0)
-  salarioBase    Float
-  bonos          Float @default(0)
-  deducciones    Float @default(0)
-  totalAPagar    Float
-  incidencias    String? @db.Text
+  id                   Int     @id @default(autoincrement())
+  nominaId             Int
+  empleadoId           Int
+  diasTrabajados       Float   @default(15)
+  horasExtra           Float   @default(0)
+  sueldoBruto          Float
+  compensacion         Float   @default(0)
+  otrasPercepciones    Float   @default(0)
+  totalPercepciones    Float
+  retencionISR         Float   @default(0)
+  descuentoIncidencias Float   @default(0)
+  otrasDeducciones     Float   @default(0)
+  totalDeducciones     Float
+  totalAPagar          Float
+  incidencias          String? @db.Text
+  reciboFirmado        Boolean @default(false)
+  urlReciboFirmado     String?
 
   nomina   Nomina   @relation(fields: [nominaId], references: [id])
   empleado Empleado @relation(fields: [empleadoId], references: [id])

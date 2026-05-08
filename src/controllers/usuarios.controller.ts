@@ -1,0 +1,97 @@
+import { Request, Response } from 'express';
+import bcrypt from 'bcryptjs';
+import { prisma } from '../utils/prisma';
+import { Rol } from '@prisma/client';
+import { z } from 'zod';
+
+const createSchema = z.object({
+  nombre:    z.string().min(2),
+  apellidos: z.string().min(2),
+  correo:    z.string().email(),
+  rol:       z.nativeEnum(Rol),
+  password:  z.string().min(6),
+});
+
+const updateSchema = z.object({
+  nombre:    z.string().min(2).optional(),
+  apellidos: z.string().min(2).optional(),
+  correo:    z.string().email().optional(),
+  rol:       z.nativeEnum(Rol).optional(),
+});
+
+export const getUsuarios = async (_req: Request, res: Response) => {
+  const usuarios = await prisma.usuario.findMany({
+    where: { deletedAt: null },
+    select: {
+      id: true, nombre: true, apellidos: true,
+      correo: true, rol: true, activo: true,
+      ultimoAcceso: true, createdAt: true,
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json({ success: true, data: usuarios });
+};
+
+export const createUsuario = async (req: Request, res: Response) => {
+  const body = createSchema.parse(req.body);
+
+  const existe = await prisma.usuario.findUnique({ where: { correo: body.correo } });
+  if (existe) {
+    res.status(409).json({ success: false, message: 'Ya existe un usuario con ese correo.' });
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(body.password, 12);
+  const usuario = await prisma.usuario.create({
+    data: { nombre: body.nombre, apellidos: body.apellidos, correo: body.correo, rol: body.rol, passwordHash },
+    select: { id: true, nombre: true, apellidos: true, correo: true, rol: true, activo: true, createdAt: true },
+  });
+  res.status(201).json({ success: true, data: usuario });
+};
+
+export const updateUsuario = async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+  const body = updateSchema.parse(req.body);
+
+  if (body.correo) {
+    const duplicado = await prisma.usuario.findFirst({ where: { correo: body.correo, id: { not: id } } });
+    if (duplicado) {
+      res.status(409).json({ success: false, message: 'Ese correo ya está en uso por otro usuario.' });
+      return;
+    }
+  }
+
+  const usuario = await prisma.usuario.update({
+    where: { id },
+    data: body,
+    select: { id: true, nombre: true, apellidos: true, correo: true, rol: true, activo: true },
+  });
+  res.json({ success: true, data: usuario });
+};
+
+export const toggleActivo = async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+
+  // Evitar que el admin se desactive a sí mismo
+  if (req.usuario?.id === id) {
+    res.status(400).json({ success: false, message: 'No puedes desactivar tu propia cuenta.' });
+    return;
+  }
+
+  const actual = await prisma.usuario.findUniqueOrThrow({ where: { id }, select: { activo: true } });
+  const usuario = await prisma.usuario.update({
+    where: { id },
+    data: { activo: !actual.activo },
+    select: { id: true, nombre: true, activo: true },
+  });
+  res.json({ success: true, data: usuario });
+};
+
+export const resetPassword = async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id);
+  const { password } = z.object({ password: z.string().min(6) }).parse(req.body);
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  await prisma.usuario.update({ where: { id }, data: { passwordHash } });
+  res.json({ success: true, message: 'Contraseña actualizada correctamente.' });
+};

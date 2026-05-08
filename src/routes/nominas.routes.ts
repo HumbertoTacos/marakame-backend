@@ -2,15 +2,14 @@ import { Router } from 'express';
 import { authenticate, authorize } from '../middlewares/auth';
 import { 
   createEmpleado, getEmpleados,
-  generarNomina, getNominas, autorizarNomina,
-  updatePreNomina
+  generarNomina, getNominas, getNominaById, autorizarNomina, // <--- Agregamos getNominaById
+  actualizarPreNomina // <--- Solo dejamos la nueva
 } from '../controllers/nominas.controller';
 
 const router = Router();
 
 // Todo el módulo de nóminas requiere autenticación
 router.use(authenticate);
-// Restricción por rol (solo recursos humanos y admin)
 router.use(authorize('ADMIN_GENERAL', 'RRHH_FINANZAS'));
 
 // Empleados
@@ -20,9 +19,10 @@ router.get('/empleados', getEmpleados);
 // Ciclos de Nómina
 router.post('/ciclo', generarNomina);
 router.get('/ciclo', getNominas);
+router.get('/ciclo/:id', getNominaById); // <--- NUEVA: Para ver los detalles de una sola nómina
 router.put('/ciclo/:id/autorizar', autorizarNomina);
 
-// Pre-Nóminas específicas
-router.put('/prenomina/:id', updatePreNomina);
+// Pre-Nóminas específicas (Edición individual)
+router.put('/prenominas/:id', actualizarPreNomina); 
 
 export default router;
