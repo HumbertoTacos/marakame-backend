@@ -26,6 +26,12 @@ router.get('/aprobados-para-ingreso', pacientesController.getAprobadosParaIngres
 router.get('/:id', pacientesController.getPacienteById);
 
 /**
+ * @route PATCH /api/v1/pacientes/:id/detox
+ * @desc Enviar paciente a Desintoxicación: cambia estado a DETOX y libera su cama
+ */
+router.patch('/:id/detox', pacientesController.enviarADetox);
+
+/**
  * @route PATCH /api/v1/pacientes/:id/archivar
  * @desc Borrado lógico — marca deletedAt para archivar el registro
  */

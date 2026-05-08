@@ -49,6 +49,9 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
     }
 
     // 3. Crear el registro de Primer Contacto (Digitalización Literal 31 Puntos)
+    const boolToStr = (val: unknown): string =>
+      val === true ? 'SÍ' : val === false ? 'NO' : String(val ?? '');
+
     const primerContacto = await tx.primerContacto.create({
       data: {
         pacienteId: pacienteIdToUse,
@@ -78,11 +81,11 @@ export const createPrimerContacto = async (req: Request, res: Response) => {
         // 20. Sustancias
         sustancias: data.sustancias || [],
         sustanciasOtros: data.sustanciasOtros || [],
-        // 21-23. Disposición y Antecedentes
-        dispuestoInternarse: data.dispuestoInternarse,
-        realizoIntervencion: data.realizoIntervencion,
+        // 21-23. Disposición y Antecedentes — forzar String para evitar rechazo de Prisma con booleanos
+        dispuestoInternarse: boolToStr(data.dispuestoInternarse),
+        realizoIntervencion: boolToStr(data.realizoIntervencion),
         conclusionIntervencion: data.conclusionIntervencion,
-        tratamientoPrevio: data.tratamientoPrevio,
+        tratamientoPrevio: boolToStr(data.tratamientoPrevio),
         lugarTratamiento: data.lugarTratamiento,
         // 24. Otros
         posibilidadesEconomicas: data.posibilidadesEconomicas,
@@ -317,6 +320,40 @@ export const updatePrimerContacto = async (req: Request, res: Response) => {
  * Desactivar (Borrado Lógico) de un Prospecto
  * PATCH /api/v1/admisiones/primer-contacto/:id/desactivar
  */
+/**
+ * Asignación directa de cama a paciente (post-valoración médica)
+ * POST /api/v1/admisiones/paciente/:id/asignar-cama
+ */
+export const asignarCamaDirecta = async (req: Request, res: Response) => {
+  const pacienteId = parseInt(req.params.id as string, 10);
+  const { camaId, fechaIngreso } = req.body;
+
+  if (!camaId) throw new AppError(400, 'El ID de cama es obligatorio');
+
+  const result = await prisma.$transaction(async (tx) => {
+    const cama = await tx.cama.findUnique({ where: { id: camaId } });
+    if (!cama) throw new AppError(404, 'Cama no encontrada');
+    if (cama.estado !== 'DISPONIBLE') throw new AppError(400, 'La cama seleccionada no está disponible');
+
+    await tx.cama.update({
+      where: { id: camaId },
+      data: { estado: 'OCUPADA', pacienteId },
+    });
+
+    const paciente = await tx.paciente.update({
+      where: { id: pacienteId },
+      data: {
+        estado: 'PENDIENTE_INGRESO',
+        fechaIngreso: fechaIngreso ? new Date(fechaIngreso) : new Date(),
+      },
+    });
+
+    return { paciente, camaId };
+  });
+
+  res.json({ success: true, data: result, message: 'Cama asignada correctamente' });
+};
+
 export const desactivarPrimerContacto = async (req: Request, res: Response) => {
   const { id } = req.params;
 

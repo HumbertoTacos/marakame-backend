@@ -56,7 +56,8 @@ export const preFillValoracionMedica = async (req: Request, res: Response) => {
  * POST /api/v1/admisiones/valoracion-medica
  */
 export const crearValoracionMedica = async (req: Request, res: Response) => {
-  const medicalData = req.body; // En este paso el médico guarda el texto, no necesariamente sube el archivo aún
+  console.log('[crearValoracionMedica] req.body:', JSON.stringify(req.body, null, 2));
+  const medicalData = req.body;
   const { pacienteId } = medicalData;
 
   if (!pacienteId) {

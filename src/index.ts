@@ -22,6 +22,8 @@ import reportesRoutes from './routes/reportes.routes';
 import usuariosRoutes from './routes/usuarios.routes';
 import dashboardRoutes from './routes/dashboard.routes';
 import actividadesRoutes from './routes/actividades.routes';
+import clinicaRoutes from './routes/clinica.routes';
+import inventarioRoutes from './routes/inventario.routes';
 
 dotenv.config();
 
@@ -57,6 +59,8 @@ app.use(`${API}/documentos`, documentosRoutes);
 app.use(`${API}/bitacora`,   bitacoraRoutes);
 app.use(`${API}/reportes`,    reportesRoutes);
 app.use(`${API}/actividades`, actividadesRoutes);
+app.use(`${API}/clinica`,     clinicaRoutes);
+app.use(`${API}/inventario`,  inventarioRoutes);
 
 // Health check (indicador de red local)
 app.get('/health', (_req, res) => {
