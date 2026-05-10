@@ -1,17 +1,20 @@
 import { Router } from 'express';
 import { Rol } from '@prisma/client'; // <--- IMPORTAMOS EL ENUM OFICIAL DE PRISMA
 import { authenticate, authorize } from '../middlewares/auth';
-import { 
-  createEmpleado, 
+import { uploadJustificante, uploadNominaArchivo } from '../utils/multerConfig';
+import {
+  createEmpleado,
   getEmpleados,
-  generarNomina, 
-  getNominas, 
-  getNominaById, 
-  autorizarNomina, 
-  firmarNomina, 
-  archivarNomina, 
+  generarNomina,
+  getNominas,
+  getNominaById,
+  autorizarNomina,
+  firmarNomina,
+  archivarNomina,
   actualizarPreNomina,
-  guardarAsistencias
+  guardarAsistencias,
+  obtenerAsistencias,
+  decidirJustificacion
 } from '../controllers/nominas.controller';
 
 const router = Router();
@@ -23,17 +26,30 @@ router.use(authenticate);
 // ARREGLOS DE ROLES ESTRICTOS (Usando el Enum de Prisma)
 // ============================================================
 const rolesLideres = [
-  Rol.ADMIN_GENERAL, Rol.RRHH_FINANZAS, Rol.JEFE_MEDICO, Rol.AREA_MEDICA, 
+  Rol.ADMIN_GENERAL, Rol.RRHH_FINANZAS, Rol.RECURSOS_HUMANOS, Rol.RECURSOS_FINANCIEROS,
+  Rol.JEFE_ADMINISTRATIVO, Rol.JEFE_MEDICO, Rol.AREA_MEDICA,
   Rol.ADMISIONES, Rol.ALMACEN, Rol.PSICOLOGIA, Rol.NUTRICION, Rol.ENFERMERIA
 ];
 
-const rolesNomina = [Rol.ADMIN_GENERAL, Rol.RRHH_FINANZAS];
+// Crear/listar/firmar nóminas: RH (sube), Finanzas, Jefatura, Dirección y el rol legacy combinado.
+const rolesNomina = [
+  Rol.ADMIN_GENERAL, Rol.RRHH_FINANZAS,
+  Rol.RECURSOS_HUMANOS, Rol.RECURSOS_FINANCIEROS, Rol.JEFE_ADMINISTRATIVO
+];
 
 // ============================================================
 // RUTAS ABIERTAS PARA JEFES (Pasar lista y ver empleados)
 // ============================================================
 router.get('/empleados', authorize(...rolesLideres), getEmpleados);
-router.post('/asistencias', authorize(...rolesLideres), guardarAsistencias);
+router.post('/asistencias', authorize(...rolesLideres), uploadJustificante.any(), guardarAsistencias);
+router.get('/asistencias', authorize(...rolesLideres), obtenerAsistencias);
+
+// Aprobar/rechazar justificación de una incidencia: sólo roles de supervisión/nómina.
+router.patch(
+  '/asistencias/:id/justificacion',
+  authorize(Rol.ADMIN_GENERAL, Rol.RRHH_FINANZAS, Rol.RECURSOS_HUMANOS, Rol.JEFE_MEDICO),
+  decidirJustificacion
+);
 
 // ============================================================
 // RUTAS RESTRINGIDAS (Uso exclusivo de RRHH y Directora)
@@ -42,8 +58,8 @@ router.post('/asistencias', authorize(...rolesLideres), guardarAsistencias);
 // Solo RRHH puede dar de alta nuevos empleados o editar salarios
 router.post('/empleados', authorize(...rolesNomina), createEmpleado);
 
-// Ciclos de Nómina
-router.post('/ciclo', authorize(...rolesNomina), generarNomina);
+// Ciclos de Nómina (RH sube el archivo de CONTPAQi)
+router.post('/ciclo', authorize(...rolesNomina), uploadNominaArchivo.single('archivo'), generarNomina);
 router.get('/ciclo', authorize(...rolesNomina), getNominas);
 router.get('/ciclo/:id', authorize(...rolesNomina), getNominaById); 
 

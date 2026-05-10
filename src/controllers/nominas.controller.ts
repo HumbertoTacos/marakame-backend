@@ -37,15 +37,18 @@ export const getEmpleados = async (req: Request, res: Response) => {
 
 export const generarNomina = async (req: Request, res: Response) => {
   try {
-    const { 
-      periodo, 
-      fechaInicio, 
-      fechaFin, 
-      totalPercepciones, 
-      totalDeducciones, 
-      totalNetoPagar,
-      regimen 
-    } = req.body;
+    // El archivo de CONTPAQi llega en req.file (multipart/form-data).
+    // El cuerpo trae: periodo, fechaInicio, fechaFin, regimen.
+    const { periodo, fechaInicio, fechaFin, regimen } = req.body;
+
+    if (!periodo || !fechaInicio || !fechaFin) {
+      return res.status(400).json({ success: false, message: 'Faltan datos del periodo.' });
+    }
+
+    const archivo = (req as any).file as Express.Multer.File | undefined;
+    if (!archivo) {
+      return res.status(400).json({ success: false, message: 'Debes adjuntar el archivo de CONTPAQi.' });
+    }
 
     // 1. Generar Folio
     const currentYear = new Date().getFullYear();
@@ -54,73 +57,31 @@ export const generarNomina = async (req: Request, res: Response) => {
     });
     const folio = `NOM-${currentYear}-${String(count + 1).padStart(3, '0')}`;
 
-    // 2. Crear la Nómina principal (Estado: EN_REVISION)
+    // 2. Crear la Nómina principal.
+    // Estado inicial PRE_NOMINA: RH ya subió el archivo, ahora pasa a Finanzas para solicitar subsidio.
+    // No calculamos nada por empleado; los totales y el desglose viven en el archivo de CONTPAQi.
     const nomina = await prisma.nomina.create({
       data: {
         folio,
         periodo,
         fechaInicio: new Date(fechaInicio),
         fechaFin: new Date(fechaFin),
-        estado: 'EN_REVISION', 
-        totalPercepciones: parseFloat(totalPercepciones || '0'),
-        totalDeducciones: parseFloat(totalDeducciones || '0'),
-        totalNetoPagar: parseFloat(totalNetoPagar || '0')
+        estado: 'PRE_NOMINA',
+        regimen: regimen || null,
+        archivoUrl: `/uploads/nominas/${archivo.filename}`,
+        // RH ya hizo su parte al generar y subir el archivo.
+        firmaRecursosHumanos: true
       }
     });
 
-    // 3. Buscar Empleados por Régimen
-    const empleadosActivos = await prisma.empleado.findMany({ 
-      where: { 
-        activo: true,
-        regimen: regimen || 'CONFIANZA' 
-      } 
-    });
-
-    // 4. Crear PreNóminas (Detalles por empleado)
-    if (empleadosActivos.length > 0) {
-      const registrosPreNomina = empleadosActivos.map(emp => {
-        const sueldoBruto = emp.salarioBase;
-        const compensacion = emp.compensacionFija || 0;
-        const tPerc = sueldoBruto + compensacion;
-        const tDeduc = sueldoBruto * 0.08; 
-
-        return {
-          nominaId: nomina.id,
-          empleadoId: emp.id,
-          diasTrabajados: 15,
-          horasExtra: 0,
-          sueldoBruto,
-          compensacion,
-          otrasPercepciones: 0,
-          totalPercepciones: tPerc,
-          retencionISR: tDeduc,
-          descuentoIncidencias: 0,
-          otrasDeducciones: 0,
-          totalDeducciones: tDeduc,
-          totalAPagar: tPerc - tDeduc,
-          reciboFirmado: false
-        };
-      });
-
-      await prisma.preNomina.createMany({
-        data: registrosPreNomina
-      });
-    }
-
-    // 5. Devolver Resultado
-    const resultado = await prisma.nomina.findUnique({
-      where: { id: nomina.id },
-      include: { prenominas: { include: { empleado: true } } }
-    });
-
-    res.status(201).json({ success: true, data: resultado });
+    res.status(201).json({ success: true, data: nomina });
 
   } catch (error: any) {
     console.error("🔥🔥🔥 ERROR EXACTO EN EL BACKEND:", error.message);
-    res.status(500).json({ 
-      success: false, 
-      message: "Falló la creación en BD", 
-      detalle: error.message 
+    res.status(500).json({
+      success: false,
+      message: "Falló la creación en BD",
+      detalle: error.message
     });
   }
 };
@@ -143,56 +104,86 @@ export const getNominas = async (req: Request, res: Response) => {
 export const firmarNomina = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const rolUsuario = req.usuario!.rol; 
+    const rolUsuario = req.usuario!.rol;
 
     const nomina = await prisma.nomina.findUnique({ where: { id: Number(id) } });
     if (!nomina) return res.status(404).json({ success: false, message: 'Nómina no encontrada' });
 
-    let dataToUpdate: any = {};
+    // Secuencia oficial del manual: Finanzas → Jefatura Administrativa → Dirección General → cierre RH.
+    // Cada paso lo firma su rol específico. Mantenemos compatibilidad con el rol legacy RRHH_FINANZAS
+    // y con ADMIN_GENERAL (que actúa como super-admin con permisos de cualquier paso).
 
-    // 1. Asignamos la firma dependiendo del rol
-    switch (rolUsuario) {
-      case 'RRHH_FINANZAS':
-        dataToUpdate.firmaFinanzas = true;
-        break;
-      case 'ADMINISTRACION':
-        dataToUpdate.firmaAdministracion = true;
-        break;
-      case 'DIRECCION_GENERAL':
-      case 'ADMIN_GENERAL':
-        dataToUpdate.firmaDireccion = true;
-        break;
-      case 'RECURSOS_HUMANOS':
-        dataToUpdate.firmaRecursosHumanos = true;
-        break;
-      default:
-        // Si tu rol no coincide o estás probando sin login estricto, 
-        // puedes comentar el default para pruebas temporales.
-        return res.status(403).json({ success: false, message: 'Tu rol no tiene jerarquía para firmar.' });
+    const esFinanzas = rolUsuario === 'RECURSOS_FINANCIEROS' || rolUsuario === 'RRHH_FINANZAS' || rolUsuario === 'ADMIN_GENERAL';
+    const esJefatura = rolUsuario === 'JEFE_ADMINISTRATIVO' || rolUsuario === 'ADMIN_GENERAL';
+    const esDireccion = rolUsuario === 'ADMIN_GENERAL';
+    const esRH = rolUsuario === 'RECURSOS_HUMANOS' || rolUsuario === 'RRHH_FINANZAS' || rolUsuario === 'ADMIN_GENERAL';
+
+    let firmaACambiar: 'firmaFinanzas' | 'firmaAdministracion' | 'firmaDireccion' | 'firmaRecursosHumanos' | null = null;
+    let etiquetaPaso = '';
+
+    if (!nomina.firmaFinanzas) {
+      // Paso 1: Recursos Financieros recibe la pre-nómina y elabora la solicitud de subsidio
+      if (esFinanzas) {
+        firmaACambiar = 'firmaFinanzas';
+        etiquetaPaso = 'Recursos Financieros (solicitud de subsidio)';
+      }
+    } else if (!nomina.firmaAdministracion) {
+      // Paso 2: Jefatura del Departamento de Administración revisa
+      if (esJefatura) {
+        firmaACambiar = 'firmaAdministracion';
+        etiquetaPaso = 'Jefatura Administrativa (revisión)';
+      }
+    } else if (!nomina.firmaDireccion) {
+      // Paso 3: Dirección General autoriza
+      if (esDireccion) {
+        firmaACambiar = 'firmaDireccion';
+        etiquetaPaso = 'Dirección General (autorización del subsidio)';
+      }
+    } else if (!nomina.firmaRecursosHumanos) {
+      // Paso 4: Recursos Humanos cierra el ciclo (paso penúltimo de la prenomina antes del archivado)
+      if (esRH) {
+        firmaACambiar = 'firmaRecursosHumanos';
+        etiquetaPaso = 'Recursos Humanos (cierre del ciclo)';
+      }
+    } else {
+      return res.status(400).json({ success: false, message: 'La nómina ya tiene las 4 firmas registradas.' });
     }
 
-    // 2. Revisamos cuántas firmas tendría en total con esta nueva acción
-    const firmasCompletas = [
-      dataToUpdate.firmaRecursosHumanos ?? nomina.firmaRecursosHumanos,
-      dataToUpdate.firmaFinanzas ?? nomina.firmaFinanzas,
-      dataToUpdate.firmaAdministracion ?? nomina.firmaAdministracion,
-      dataToUpdate.firmaDireccion ?? nomina.firmaDireccion
-    ].filter(Boolean).length;
+    if (!firmaACambiar) {
+      return res.status(403).json({
+        success: false,
+        message: 'Tu rol no puede firmar el paso actual del flujo.'
+      });
+    }
 
-    // 3. LA MAGIA: Si ya juntó las 4 firmas, cambiamos el estado automáticamente
-    if (firmasCompletas === 4) {
+    const dataToUpdate: any = { [firmaACambiar]: true };
+
+    // Cambios de estado a lo largo del flujo:
+    // PRE_NOMINA → SOLICITUD_SUBSIDIO al firmar Finanzas
+    // SOLICITUD_SUBSIDIO → EN_REVISION al firmar Administración
+    // EN_REVISION → AUTORIZADO al firmar Dirección
+    // AUTORIZADO se mantiene cuando RH cierra; el archivado lo pasa a PAGADO.
+    if (firmaACambiar === 'firmaFinanzas') {
+      dataToUpdate.estado = 'SOLICITUD_SUBSIDIO';
+      dataToUpdate.fechaSolicitudSubsidio = new Date();
+    } else if (firmaACambiar === 'firmaAdministracion') {
+      dataToUpdate.estado = 'EN_REVISION';
+    } else if (firmaACambiar === 'firmaDireccion') {
       dataToUpdate.estado = 'AUTORIZADO';
       dataToUpdate.fechaAutorizacion = new Date();
       dataToUpdate.usuarioAutorizaId = req.usuario!.id;
     }
 
-    // 4. Guardamos en la base de datos
     const actualizada = await prisma.nomina.update({
       where: { id: Number(id) },
       data: dataToUpdate
     });
 
-    res.json({ success: true, message: 'Firma registrada correctamente.', data: actualizada });
+    res.json({
+      success: true,
+      message: `Firma de ${etiquetaPaso} registrada.`,
+      data: actualizada
+    });
   } catch (error: any) {
     console.error("Error al firmar:", error);
     res.status(500).json({ success: false, message: 'Error interno al firmar', detalle: error.message });
@@ -396,43 +387,92 @@ export const archivarNomina = async (req: Request, res: Response) => {
 
 export const guardarAsistencias = async (req: Request, res: Response) => {
   try {
-    const { fecha, registros } = req.body;
-    const usuarioId = req.usuario!.id; 
+    // El body viene como multipart/form-data: `fecha` es string, `registros` viene como JSON string,
+    // y los archivos llegan en req.files con fieldname `archivo_<empleadoId>`.
+    const { fecha } = req.body;
+    const usuarioId = req.usuario!.id;
+
+    let registros: any[] = [];
+    try {
+      registros = typeof req.body.registros === 'string'
+        ? JSON.parse(req.body.registros)
+        : (req.body.registros || []);
+    } catch {
+      return res.status(400).json({ success: false, message: 'Formato inválido en `registros`.' });
+    }
+
+    if (!fecha || !Array.isArray(registros) || registros.length === 0) {
+      return res.status(400).json({ success: false, message: 'Faltan datos: fecha o registros.' });
+    }
+
+    // Indexamos archivos subidos por empleadoId (fieldname = archivo_<id>)
+    const archivosPorEmpleado: Record<string, string> = {};
+    const files = (req.files as Express.Multer.File[]) || [];
+    for (const f of files) {
+      const match = f.fieldname.match(/^archivo_(\d+)$/);
+      if (match) {
+        archivosPorEmpleado[match[1]] = `/uploads/justificantes/${f.filename}`;
+      }
+    }
 
     // 1. Buscar la Nómina que esté actualmente en curso
     const nominaActiva = await prisma.nomina.findFirst({
-      where: { 
-        estado: { in: ['BORRADOR', 'PRE_NOMINA', 'EN_REVISION'] } 
+      where: {
+        estado: { in: ['BORRADOR', 'PRE_NOMINA', 'EN_REVISION'] }
       },
       orderBy: { id: 'desc' }
     });
 
     if (!nominaActiva) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'No hay un periodo de nómina abierto. RRHH debe generar una nueva nómina primero.' 
+      return res.status(400).json({
+        success: false,
+        message: 'No hay un periodo de nómina abierto. RRHH debe generar una nueva nómina primero.'
       });
     }
 
-    // 2. Preparar los datos para insertarlos de golpe (Bulk Insert)
+    // 2. Bloqueo: si ya hay registros para alguno de estos empleados en la fecha, rechazamos.
+    const fechaInicio = new Date(fecha);
+    fechaInicio.setUTCHours(0, 0, 0, 0);
+    const fechaFin = new Date(fecha);
+    fechaFin.setUTCHours(23, 59, 59, 999);
+
+    const empleadoIds = registros.map((r: any) => Number(r.empleadoId)).filter(Number.isFinite);
+    const yaRegistrados = await prisma.registroAsistencia.findMany({
+      where: {
+        empleadoId: { in: empleadoIds },
+        fecha: { gte: fechaInicio, lte: fechaFin }
+      },
+      select: { empleadoId: true }
+    });
+
+    if (yaRegistrados.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'La asistencia de hoy ya fue capturada para este grupo. No se puede volver a registrar el mismo día.',
+        empleadosBloqueados: yaRegistrados.map(r => r.empleadoId)
+      });
+    }
+
+    // 3. Preparar los datos (incluyendo URL del documento si subieron archivo)
     const datosAInsertar = registros.map((reg: any) => ({
       fecha: new Date(fecha),
       tipo: reg.tipo,
       motivoJustificacion: reg.motivo || null,
+      documentoUrl: archivosPorEmpleado[String(reg.empleadoId)] || null,
       estadoJustificacion: reg.tipo === 'ASISTENCIA' ? 'NO_APLICA' : 'PENDIENTE',
-      empleadoId: reg.empleadoId,
+      empleadoId: Number(reg.empleadoId),
       nominaId: nominaActiva.id,
       registradoPorId: usuarioId
     }));
 
-    // 3. Guardar en la base de datos
+    // 4. Guardar en la base de datos
     const resultado = await prisma.registroAsistencia.createMany({
       data: datosAInsertar,
-      skipDuplicates: true // Evita errores si se manda 2 veces
+      skipDuplicates: true
     });
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       message: `Se guardaron ${resultado.count} registros de asistencia.`,
       data: resultado
     });
@@ -440,6 +480,43 @@ export const guardarAsistencias = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Error al guardar asistencias:", error);
     res.status(500).json({ success: false, message: 'Error interno al guardar asistencias', detalle: error.message });
+  }
+};
+
+export const decidirJustificacion = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { aprobar } = req.body;
+
+    if (typeof aprobar !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'Debe enviar `aprobar: boolean` en el body.' });
+    }
+
+    const registro = await prisma.registroAsistencia.findUnique({ where: { id: Number(id) } });
+    if (!registro) {
+      return res.status(404).json({ success: false, message: 'Registro de asistencia no encontrado.' });
+    }
+
+    if (registro.tipo === 'ASISTENCIA') {
+      return res.status(400).json({ success: false, message: 'Una asistencia normal no requiere justificación.' });
+    }
+
+    const actualizado = await prisma.registroAsistencia.update({
+      where: { id: Number(id) },
+      data: {
+        estadoJustificacion: aprobar ? 'APROBADA' : 'RECHAZADA'
+      },
+      include: { empleado: true }
+    });
+
+    res.json({
+      success: true,
+      message: aprobar ? 'Justificación aprobada.' : 'Justificación rechazada.',
+      data: actualizado
+    });
+  } catch (error: any) {
+    console.error('Error decidiendo justificación:', error);
+    res.status(500).json({ success: false, message: 'Error interno', detalle: error.message });
   }
 };
 
@@ -451,12 +528,13 @@ export const obtenerAsistencias = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Faltan rangos de fecha.' });
     }
 
-    // Normalizamos las fechas para que abarquen el día completo
+    // Normalizamos en UTC para que el offset local no recorte los registros de los bordes
+    // (ej. en México UTC-6, setHours(0) movía el inicio 6 horas adelante y dejaba fuera el día 1).
     const inicio = new Date(fechaInicio as string);
-    inicio.setHours(0, 0, 0, 0);
+    inicio.setUTCHours(0, 0, 0, 0);
 
     const fin = new Date(fechaFin as string);
-    fin.setHours(23, 59, 59, 999);
+    fin.setUTCHours(23, 59, 59, 999);
 
     const registros = await prisma.registroAsistencia.findMany({
       where: {

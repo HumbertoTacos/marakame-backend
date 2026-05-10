@@ -68,6 +68,9 @@ enum Rol {
   NUTRICION
   PSICOLOGIA
   RRHH_FINANZAS
+  RECURSOS_HUMANOS
+  RECURSOS_FINANCIEROS
+  JEFE_ADMINISTRATIVO
   ADMISIONES
   ALMACEN
   JEFE_MEDICO
@@ -1513,6 +1516,8 @@ model Nomina {
   totalDeducciones       Float?       @default(0)
   totalNetoPagar         Float?       @default(0)
   totalGeneral           Float?       @default(0)
+  regimen                String?
+  archivoUrl             String?
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
 
