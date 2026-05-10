@@ -10,6 +10,53 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ==========================================
+// NUEVO MÓDULO: CONTROL DE ASISTENCIAS
+// ==========================================
+
+enum TipoAsistencia {
+  ASISTENCIA
+  FALTA
+  RETARDO
+}
+
+enum EstadoJustificacion {
+  NO_APLICA    
+  PENDIENTE    
+  APROBADA     
+  RECHAZADA    
+}
+
+model RegistroAsistencia {
+  id                     Int                 @id @default(autoincrement())
+  fecha                  DateTime            
+  tipo                   TipoAsistencia      @default(ASISTENCIA)
+  
+  // --- DATOS DE JUSTIFICACIÓN ---
+  motivoJustificacion    String?             @db.Text
+  documentoUrl           String?             
+  estadoJustificacion    EstadoJustificacion @default(NO_APLICA)
+  
+  // --- RELACIONES ---
+  empleadoId             Int
+  empleado               Empleado            @relation(fields: [empleadoId], references: [id])
+  
+  nominaId               Int
+  nomina                 Nomina              @relation(fields: [nominaId], references: [id])
+  
+  // --- AUDITORÍA ---
+  registradoPorId        Int?                
+  registradoPor          Usuario?            @relation("AsistenciasRegistradas", fields: [registradoPorId], references: [id])
+  
+  revisadoPorId          Int?                
+  revisadoPor            Usuario?            @relation("AsistenciasRevisadas", fields: [revisadoPorId], references: [id])
+  
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
+  @@map("registros_asistencia")
+}
+
 // ============================================================
 // AUTENTICACIÓN Y ROLES
 // ============================================================
@@ -77,6 +124,10 @@ model Usuario {
   solicitudesMedicas SolicitudMedica[]
 
   contraRecibosRecibidos  ContraRecibo[]
+  
+  // --- RELACIONES NUEVAS DE ASISTENCIA ---
+  asistenciasRegistradas  RegistroAsistencia[] @relation("AsistenciasRegistradas")
+  asistenciasRevisadas    RegistroAsistencia[] @relation("AsistenciasRevisadas")
 
   @@map("usuarios")
 }
@@ -244,9 +295,9 @@ enum EstadoValoracion {
 }
 
 model Sustancia {
-  id     Int     @id @default(autoincrement())
-  nombre String  @unique
-  activo Boolean @default(true)
+  id      Int     @id @default(autoincrement())
+  nombre  String  @unique
+  activo  Boolean @default(true)
 
   @@map("sustancias")
 }
@@ -308,10 +359,10 @@ model PrimerContacto {
   sintomasReportados String? @db.Text
 
   // Timestamps, Estado y Relaciones
-  activo     Boolean     @default(true)
-  createdAt  DateTime    @default(now())
-  paciente   Paciente    @relation(fields: [pacienteId], references: [id])
-  usuario    Usuario     @relation(fields: [usuarioId], references: [id])
+  activo     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  paciente   Paciente  @relation(fields: [pacienteId], references: [id])
+  usuario    Usuario   @relation(fields: [usuarioId], references: [id])
   documentos Documento[]
 
   @@map("primer_contacto")
@@ -384,7 +435,7 @@ model ValoracionMedica {
   exploracionFisicaDesc  String? @db.Text
 
   // Examen Mental y Conclusión
-  examenMental         String? @db.Text
+  examenMental       String? @db.Text
   impresionDiagnostica String? @db.Text
   pronostico           String? @db.Text
   planTratamiento      String? @db.Text
@@ -410,16 +461,16 @@ enum TipoEgreso {
 }
 
 model EgresoRegistro {
-  id                     Int        @id @default(autoincrement())
-  pacienteId             Int        @unique
-  fechaEgreso            DateTime   @default(now())
-  tipoEgreso             TipoEgreso
-  notaMedica             String?    @db.Text
-  saldoPendiente         Float      @default(0)
+  id                   Int        @id @default(autoincrement())
+  pacienteId           Int        @unique
+  fechaEgreso          DateTime   @default(now())
+  tipoEgreso           TipoEgreso
+  notaMedica           String?    @db.Text
+  saldoPendiente       Float      @default(0)
   pertenenciasEntregadas Boolean    @default(false)
   inscritoReforzamiento  Boolean    @default(false)
-  autorizadoPorId        Int
-  createdAt              DateTime   @default(now())
+  autorizadoPorId      Int
+  createdAt            DateTime   @default(now())
 
   paciente      Paciente @relation(fields: [pacienteId], references: [id])
   autorizadoPor Usuario  @relation(fields: [autorizadoPorId], references: [id])
@@ -867,13 +918,13 @@ model CargoPaciente {
 // ============================================================
 
 model EvaluacionResultado {
-  id              Int      @id @default(autoincrement())
-  pacienteId      Int
-  usuarioId       Int
-  instrumento     String   // AUDIT, PHQ9, CAGE, ASSIST, BECK, HAMILTON, DAST, ASI
-  puntajeTotal    Float
-  interpretacion  String?  @db.Text
-  observaciones   String?  @db.Text
+  id             Int      @id @default(autoincrement())
+  pacienteId     Int
+  usuarioId      Int
+  instrumento    String   // AUDIT, PHQ9, CAGE, ASSIST, BECK, HAMILTON, DAST, ASI
+  puntajeTotal   Float
+  interpretacion String?  @db.Text
+  observaciones  String?  @db.Text
   fechaAplicacion DateTime @default(now())
 
   paciente Paciente @relation(fields: [pacienteId], references: [id])
@@ -1189,6 +1240,11 @@ enum EstadoCompra {
   FINALIZADO
 
   RECHAZADO
+
+  // --- ESTADOS ANTIGUOS (Para no romper registros viejos en la BD) ---
+  REQUISICION_REVISADA
+  EN_REVISION_ADMIN
+  EN_AUTORIZACION_DIRECCION
 }
 
 enum TipoCompra {
@@ -1376,7 +1432,7 @@ model CompraHistorial {
 }
 
 // ============================================================
-// NÓMINAS Y RECURSOS HUMANOS (CORREGIDO SEGÚN MANUAL)
+// NÓMINAS Y RECURSOS HUMANOS
 // ============================================================
 
 enum RegimenLaboral {
@@ -1413,8 +1469,9 @@ model Empleado {
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
-  prenominas  PreNomina[]
-  incidencias IncidenciaNomina[]
+  prenominas          PreNomina[]
+  incidencias         IncidenciaNomina[]
+  registrosAsistencia RegistroAsistencia[] // <--- SE AGREGÓ LA RELACIÓN FALTANTE
 
   @@map("empleados")
 }
@@ -1459,8 +1516,9 @@ model Nomina {
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
 
-  usuarioAutoriza Usuario?    @relation(fields: [usuarioAutorizaId], references: [id])
-  prenominas      PreNomina[]
+  usuarioAutoriza     Usuario?              @relation(fields: [usuarioAutorizaId], references: [id])
+  prenominas          PreNomina[]
+  registrosAsistencia RegistroAsistencia[] // <--- SE AGREGÓ LA RELACIÓN FALTANTE
 
   @@map("nominas")
 }

@@ -389,3 +389,92 @@ export const archivarNomina = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: 'Error al archivar la nómina', detalle: error.message });
   }
 };
+
+// ============================================================
+// CONTROL DE ASISTENCIAS DIARIAS
+// ============================================================
+
+export const guardarAsistencias = async (req: Request, res: Response) => {
+  try {
+    const { fecha, registros } = req.body;
+    const usuarioId = req.usuario!.id; 
+
+    // 1. Buscar la Nómina que esté actualmente en curso
+    const nominaActiva = await prisma.nomina.findFirst({
+      where: { 
+        estado: { in: ['BORRADOR', 'PRE_NOMINA', 'EN_REVISION'] } 
+      },
+      orderBy: { id: 'desc' }
+    });
+
+    if (!nominaActiva) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'No hay un periodo de nómina abierto. RRHH debe generar una nueva nómina primero.' 
+      });
+    }
+
+    // 2. Preparar los datos para insertarlos de golpe (Bulk Insert)
+    const datosAInsertar = registros.map((reg: any) => ({
+      fecha: new Date(fecha),
+      tipo: reg.tipo,
+      motivoJustificacion: reg.motivo || null,
+      estadoJustificacion: reg.tipo === 'ASISTENCIA' ? 'NO_APLICA' : 'PENDIENTE',
+      empleadoId: reg.empleadoId,
+      nominaId: nominaActiva.id,
+      registradoPorId: usuarioId
+    }));
+
+    // 3. Guardar en la base de datos
+    const resultado = await prisma.registroAsistencia.createMany({
+      data: datosAInsertar,
+      skipDuplicates: true // Evita errores si se manda 2 veces
+    });
+
+    res.json({ 
+      success: true, 
+      message: `Se guardaron ${resultado.count} registros de asistencia.`,
+      data: resultado
+    });
+
+  } catch (error: any) {
+    console.error("Error al guardar asistencias:", error);
+    res.status(500).json({ success: false, message: 'Error interno al guardar asistencias', detalle: error.message });
+  }
+};
+
+export const obtenerAsistencias = async (req: Request, res: Response) => {
+  try {
+    const { fechaInicio, fechaFin } = req.query;
+    
+    if (!fechaInicio || !fechaFin) {
+      return res.status(400).json({ success: false, message: 'Faltan rangos de fecha.' });
+    }
+
+    // Normalizamos las fechas para que abarquen el día completo
+    const inicio = new Date(fechaInicio as string);
+    inicio.setHours(0, 0, 0, 0);
+
+    const fin = new Date(fechaFin as string);
+    fin.setHours(23, 59, 59, 999);
+
+    const registros = await prisma.registroAsistencia.findMany({
+      where: {
+        fecha: {
+          gte: inicio,
+          lte: fin,
+        },
+      },
+      include: {
+        empleado: true
+      },
+      orderBy: {
+        fecha: 'asc'
+      }
+    });
+
+    res.json({ success: true, data: registros });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

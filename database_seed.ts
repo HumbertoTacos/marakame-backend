@@ -111,13 +111,11 @@ async function main() {
   // 4. PACIENTES Y EXPEDIENTES
   console.log('🏥 Registrando pacientes y expedientes clínicos (Muestra Completa)...');
   
-  // PACIENTE 1: INTERNADO (Flujo Completo)
-  // NOTA: Mantenemos el error intencional tuyo de String vs Int en claveUnica (ADM-2026-001) si es que tu schema permite Int y fallaba aquí, te lo dejé igual que el tuyo.
   let pInternado = await prisma.paciente.findUnique({ where: { claveUnica: 1 } });
   if (!pInternado) {
     pInternado = await prisma.paciente.create({
       data: {
-        claveUnica: 1, // Nota: En tu Prisma Schema enviaste "claveUnica Int", ajusté a 1 para que tu Seed corra sin crashear.
+        claveUnica: 1, 
         nombre: 'Carlos',
         apellidoPaterno: 'Jiménez',
         apellidoMaterno: 'Sosa',
@@ -142,13 +140,11 @@ async function main() {
     },
   });
 
-  // Asignar cama a Carlos
   await prisma.cama.update({
     where: { numero: 'H-01' },
     data: { estado: EstadoCama.OCUPADA, pacienteId: pInternado.id },
   });
 
-  // Agregar Signos Vitales para Carlos
   await (prisma as any).signoVital.create({
     data: {
       expedienteId: expCarlos.id,
@@ -163,7 +159,6 @@ async function main() {
     },
   });
 
-  // Nota de Evolución
   await (prisma as any).notaEvolucion.create({
     data: {
       expedienteId: expCarlos.id,
@@ -173,7 +168,6 @@ async function main() {
     },
   });
 
-  // PACIENTE 2: PROSPECTO (CRM - Agenda)
   let pProspecto = await prisma.paciente.findFirst({ where: { nombre: 'María', apellidoPaterno: 'Rodríguez' } });
   if (!pProspecto) {
     pProspecto = await prisma.paciente.create({
@@ -202,12 +196,11 @@ async function main() {
         dispuestoInternarse: 'SI',
         conclusionMedica: 'Interesada en internamiento voluntario. Se programa cita para mañana.',
         acuerdoSeguimiento: TipoAcuerdoSeguimiento.CITA_PROGRAMADA,
-        fechaAcuerdo: new Date(new Date().getTime() + 24 * 60 * 60 * 1000), // Mañana
+        fechaAcuerdo: new Date(new Date().getTime() + 24 * 60 * 60 * 1000), 
       },
     });
   }
 
-  // PACIENTE 3: EN VALORACIÓN (Bandeja Médica)
   let pValoracion = await prisma.paciente.findFirst({ where: { nombre: 'Fernando', apellidoPaterno: 'Gómez' } });
   if (!pValoracion) {
     pValoracion = await prisma.paciente.create({
@@ -239,7 +232,6 @@ async function main() {
       },
     });
 
-    // 4.1 Valoración Médica (Nueva Estructura) para Fernando
     console.log('🩺 Generando valoración médica institucional para Fernando...');
     await prisma.valoracionMedica.create({
       data: {
@@ -333,74 +325,125 @@ async function main() {
   });
 
   // ==========================================================
-  // 7. NÓMINAS Y EMPLEADOS
+  // 7. NÓMINAS Y EMPLEADOS (SÚPER POBLADO)
   // ==========================================================
-  console.log('💵 Generando empleados y nóminas de prueba...');
+  console.log('💵 Generando base de empleados robusta (30 Empleados)...');
   
   const empleadosData = [
-    { nombre: 'Pedro', apellidos: 'Martínez', puesto: 'Guardia de Seguridad', departamento: 'Mantenimiento', regimen: RegimenLaboral.CONFIANZA, salarioBase: 4000, compensacionFija: 500 },
-    { nombre: 'Lucía', apellidos: 'Fernández', puesto: 'Cocinera', departamento: 'Cocina', regimen: RegimenLaboral.LISTA_RAYA, salarioBase: 4500, compensacionFija: 0 },
-    { nombre: 'Miguel', apellidos: 'Torres', puesto: 'Chofer', departamento: 'Logística', regimen: RegimenLaboral.CONFIANZA, salarioBase: 3800, compensacionFija: 0 },
+    // --- ADMISIONES ---
+    { nombre: 'Sofía', apellidos: 'López', puesto: 'Recepcionista', departamento: 'ADMISIONES', regimen: RegimenLaboral.CONFIANZA, salarioBase: 6000, compensacionFija: 0 },
+    { nombre: 'Mario', apellidos: 'Guzmán', puesto: 'Asesor de Admisiones', departamento: 'ADMISIONES', regimen: RegimenLaboral.CONFIANZA, salarioBase: 8000, compensacionFija: 1000 },
+    { nombre: 'Carla', apellidos: 'Suárez', puesto: 'Asistente Telefónico', departamento: 'ADMISIONES', regimen: RegimenLaboral.LISTA_RAYA, salarioBase: 5000, compensacionFija: 0 },
+    { nombre: 'Héctor', apellidos: 'Navarro', puesto: 'Trabajador Social', departamento: 'ADMISIONES', regimen: RegimenLaboral.CONFIANZA, salarioBase: 9000, compensacionFija: 500 },
+    { nombre: 'Patricia', apellidos: 'Mendoza', puesto: 'Orientadora', departamento: 'ADMISIONES', regimen: RegimenLaboral.CONFIANZA, salarioBase: 7500, compensacionFija: 0 },
+
+    // --- ALMACÉN ---
+    { nombre: 'Pablo', apellidos: 'Vargas', puesto: 'Jefe de Almacén', departamento: 'ALMACEN', regimen: RegimenLaboral.CONFIANZA, salarioBase: 10000, compensacionFija: 1500 },
+    { nombre: 'Luis', apellidos: 'Ponce', puesto: 'Auxiliar de Almacén', departamento: 'ALMACEN', regimen: RegimenLaboral.LISTA_RAYA, salarioBase: 4500, compensacionFija: 200 },
+    { nombre: 'Raúl', apellidos: 'García', puesto: 'Montacarguista', departamento: 'ALMACEN', regimen: RegimenLaboral.LISTA_RAYA, salarioBase: 5500, compensacionFija: 0 },
+    { nombre: 'Diana', apellidos: 'Castro', puesto: 'Inventarista', departamento: 'ALMACEN', regimen: RegimenLaboral.CONFIANZA, salarioBase: 6500, compensacionFija: 0 },
+    { nombre: 'Tomás', apellidos: 'Ruiz', puesto: 'Auxiliar de Limpieza', departamento: 'ALMACEN', regimen: RegimenLaboral.LISTA_RAYA, salarioBase: 4000, compensacionFija: 0 },
+
+    // --- ADMINISTRACIÓN / RRHH ---
+    { nombre: 'Valeria', apellidos: 'Ortiz', puesto: 'Auxiliar Contable', departamento: 'ADMINISTRACION', regimen: RegimenLaboral.CONFIANZA, salarioBase: 9000, compensacionFija: 0 },
+    { nombre: 'Felipe', apellidos: 'Ramos', puesto: 'Generalista RRHH', departamento: 'RECURSOS HUMANOS', regimen: RegimenLaboral.CONFIANZA, salarioBase: 11000, compensacionFija: 2000 },
+    { nombre: 'Mónica', apellidos: 'Salazar', puesto: 'Secretaria', departamento: 'ADMINISTRACION', regimen: RegimenLaboral.CONFIANZA, salarioBase: 5500, compensacionFija: 0 },
+    { nombre: 'Andrés', apellidos: 'Campos', puesto: 'Auditor Interno', departamento: 'ADMINISTRACION', regimen: RegimenLaboral.CONFIANZA, salarioBase: 14000, compensacionFija: 1000 },
+    { nombre: 'Elena', apellidos: 'Vega', puesto: 'Asistente de Dirección', departamento: 'ADMINISTRACION', regimen: RegimenLaboral.CONFIANZA, salarioBase: 8500, compensacionFija: 500 },
+
+    // --- CLÍNICO (Enfermería, Psicología, etc) ---
+    { nombre: 'Lucía', apellidos: 'Fernández', puesto: 'Psicóloga', departamento: 'CLINICO', regimen: RegimenLaboral.CONFIANZA, salarioBase: 12000, compensacionFija: 1000 },
+    { nombre: 'Daniel', apellidos: 'Romero', puesto: 'Psicólogo Clínico', departamento: 'CLINICO', regimen: RegimenLaboral.CONFIANZA, salarioBase: 12000, compensacionFija: 500 },
+    { nombre: 'Rosa', apellidos: 'Peralta', puesto: 'Enfermera Jefe', departamento: 'CLINICO', regimen: RegimenLaboral.CONFIANZA, salarioBase: 9500, compensacionFija: 1200 },
+    { nombre: 'Jorge', apellidos: 'Escobar', puesto: 'Enfermero de Guardia', departamento: 'CLINICO', regimen: RegimenLaboral.LISTA_RAYA, salarioBase: 7000, compensacionFija: 800 },
+    { nombre: 'Carmen', apellidos: 'Lara', puesto: 'Nutrióloga', departamento: 'CLINICO', regimen: RegimenLaboral.CONFIANZA, salarioBase: 10500, compensacionFija: 0 },
+
+    // --- MÉDICO ---
+    { nombre: 'Miguel', apellidos: 'Torres', puesto: 'Médico General', departamento: 'MEDICO', regimen: RegimenLaboral.CONFIANZA, salarioBase: 18000, compensacionFija: 2000 },
+    { nombre: 'Sara', apellidos: 'Molina', puesto: 'Médico Psiquiatra', departamento: 'MEDICO', regimen: RegimenLaboral.CONFIANZA, salarioBase: 25000, compensacionFija: 5000 },
+    { nombre: 'Roberto', apellidos: 'Díaz', puesto: 'Médico Residente', departamento: 'MEDICO', regimen: RegimenLaboral.CONFIANZA, salarioBase: 12000, compensacionFija: 0 },
+    { nombre: 'Teresa', apellidos: 'Blanco', puesto: 'Médico General Guardia', departamento: 'MEDICO', regimen: RegimenLaboral.CONFIANZA, salarioBase: 15000, compensacionFija: 1500 },
+    { nombre: 'Arturo', apellidos: 'Pineda', puesto: 'Paramédico', departamento: 'MEDICO', regimen: RegimenLaboral.LISTA_RAYA, salarioBase: 8000, compensacionFija: 500 },
+
+    // --- MANTENIMIENTO Y COCINA (Otros) ---
+    { nombre: 'Pedro', apellidos: 'Martínez', puesto: 'Guardia de Seguridad', departamento: 'MANTENIMIENTO', regimen: RegimenLaboral.LISTA_RAYA, salarioBase: 5000, compensacionFija: 500 },
+    { nombre: 'José', apellidos: 'Cabrera', puesto: 'Técnico Mantenimiento', departamento: 'MANTENIMIENTO', regimen: RegimenLaboral.CONFIANZA, salarioBase: 6500, compensacionFija: 0 },
+    { nombre: 'Gloria', apellidos: 'Rojas', puesto: 'Chef Principal', departamento: 'COCINA', regimen: RegimenLaboral.CONFIANZA, salarioBase: 8000, compensacionFija: 1000 },
+    { nombre: 'Beatriz', apellidos: 'Soto', puesto: 'Ayudante de Cocina', departamento: 'COCINA', regimen: RegimenLaboral.LISTA_RAYA, salarioBase: 4200, compensacionFija: 0 },
+    { nombre: 'Manuel', apellidos: 'Flores', puesto: 'Chofer', departamento: 'MANTENIMIENTO', regimen: RegimenLaboral.LISTA_RAYA, salarioBase: 5500, compensacionFija: 200 },
   ];
 
   const empleadosCreados = [];
+  // Evitar duplicados si ya existen corriendo el seed varias veces
   for (const emp of empleadosData) {
-    const empleadoBD = await prisma.empleado.create({ data: emp });
-    empleadosCreados.push(empleadoBD);
+    const empleadoExiste = await prisma.empleado.findFirst({ where: { nombre: emp.nombre, apellidos: emp.apellidos }});
+    if (!empleadoExiste) {
+      const empleadoBD = await prisma.empleado.create({ data: emp });
+      empleadosCreados.push(empleadoBD);
+    } else {
+      empleadosCreados.push(empleadoExiste);
+    }
   }
 
-  // Crear una nómina autorizada por el administrador general
-  let totalNomina = 0;
-  const nominaPrueba = await prisma.nomina.create({
-    data: {
-      folio: 'NOM-2026-05-01',
-      periodo: 'Primera Quincena Mayo 2026',
-      fechaInicio: new Date('2026-05-01'),
-      fechaFin: new Date('2026-05-15'),
-      estado: EstadoNomina.AUTORIZADO,
-      usuarioAutorizaId: admin!.id,
-      fechaAutorizacion: new Date(),
-    }
-  });
-
-  // Crear las prenóminas (recibos) para cada empleado
-  for (const emp of empleadosCreados) {
-    const sueldoBruto = emp.salarioBase;
-    const compensacion = emp.compensacionFija || 0;
-    const totalPercepciones = sueldoBruto + compensacion;
-    
-    // Simular retención ISR básica (8%)
-    const retencionISR = sueldoBruto * 0.08;
-    const descuentoIncidencias = 0; // Sin faltas en este ejemplo
-    const totalDeducciones = retencionISR + descuentoIncidencias;
-    
-    const totalAPagar = totalPercepciones - totalDeducciones;
-    
-    totalNomina += totalAPagar;
-
-    await prisma.preNomina.create({
+  // Crear una nómina autorizada por el administrador general (solo si hay empleados nuevos o si no hay nominas)
+  const nominasExistentes = await prisma.nomina.count();
+  if (nominasExistentes === 0 && empleadosCreados.length > 0) {
+    let totalNomina = 0;
+    const nominaPrueba = await prisma.nomina.create({
       data: {
-        nominaId: nominaPrueba.id,
-        empleadoId: emp.id,
-        diasTrabajados: 15,
-        horasExtra: 0,
-        sueldoBruto,
-        compensacion,
-        totalPercepciones,
-        retencionISR,
-        descuentoIncidencias,
-        totalDeducciones,
-        totalAPagar,
-        incidencias: null,
+        folio: 'NOM-2026-05-01',
+        periodo: 'Primera Quincena Mayo 2026',
+        fechaInicio: new Date('2026-05-01'),
+        fechaFin: new Date('2026-05-15'),
+        estado: EstadoNomina.AUTORIZADO,
+        usuarioAutorizaId: admin!.id,
+        fechaAutorizacion: new Date(),
+        firmaRecursosHumanos: true,
+        firmaFinanzas: true,
+        firmaAdministracion: true,
+        firmaDireccion: true
       }
     });
-  }
 
-  // Actualizar el total general de la nómina
-  await prisma.nomina.update({
-    where: { id: nominaPrueba.id },
-    data: { totalGeneral: totalNomina }
-  });
+    // Crear las prenóminas (recibos) para cada empleado
+    for (const emp of empleadosCreados) {
+      const sueldoBruto = emp.salarioBase;
+      const compensacion = emp.compensacionFija || 0;
+      const totalPercepciones = sueldoBruto + compensacion;
+      
+      // Simular retención ISR básica (8%)
+      const retencionISR = sueldoBruto * 0.08;
+      const descuentoIncidencias = 0; // Sin faltas en este ejemplo
+      const totalDeducciones = retencionISR + descuentoIncidencias;
+      
+      const totalAPagar = totalPercepciones - totalDeducciones;
+      
+      totalNomina += totalAPagar;
+
+      await prisma.preNomina.create({
+        data: {
+          nominaId: nominaPrueba.id,
+          empleadoId: emp.id,
+          diasTrabajados: 15,
+          horasExtra: 0,
+          sueldoBruto,
+          compensacion,
+          totalPercepciones,
+          retencionISR,
+          descuentoIncidencias,
+          totalDeducciones,
+          totalAPagar,
+          incidencias: null,
+        }
+      });
+    }
+
+    // Actualizar el total general de la nómina
+    await prisma.nomina.update({
+      where: { id: nominaPrueba.id },
+      data: { totalGeneral: totalNomina, totalNetoPagar: totalNomina, totalPercepciones: totalNomina, totalDeducciones: totalNomina * 0.08 }
+    });
+  }
 
   console.log('✅ Seed completado con éxito 🚀');
 }
