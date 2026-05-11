@@ -14,7 +14,9 @@ import {
   actualizarPreNomina,
   guardarAsistencias,
   obtenerAsistencias,
-  decidirJustificacion
+  decidirJustificacion,
+  subirSubsidio,
+  subirNominaFinal
 } from '../controllers/nominas.controller';
 
 const router = Router();
@@ -44,10 +46,16 @@ router.get('/empleados', authorize(...rolesLideres), getEmpleados);
 router.post('/asistencias', authorize(...rolesLideres), uploadJustificante.any(), guardarAsistencias);
 router.get('/asistencias', authorize(...rolesLideres), obtenerAsistencias);
 
-// Aprobar/rechazar justificación de una incidencia: sólo roles de supervisión/nómina.
+// Aprobar/rechazar justificación de una incidencia: roles de supervisión/nómina.
 router.patch(
   '/asistencias/:id/justificacion',
-  authorize(Rol.ADMIN_GENERAL, Rol.RRHH_FINANZAS, Rol.RECURSOS_HUMANOS, Rol.JEFE_MEDICO),
+  authorize(
+    Rol.ADMIN_GENERAL,
+    Rol.RRHH_FINANZAS,
+    Rol.RECURSOS_HUMANOS,
+    Rol.JEFE_ADMINISTRATIVO,
+    Rol.JEFE_MEDICO
+  ),
   decidirJustificacion
 );
 
@@ -69,6 +77,22 @@ router.put('/ciclo/:id/firmar', authorize(...rolesNomina), firmarNomina);
 router.put('/ciclo/:id/archivar', authorize(...rolesNomina), archivarNomina); 
 
 // Pre-Nóminas específicas (Edición individual)
-router.put('/prenominas/:id', authorize(...rolesNomina), actualizarPreNomina); 
+router.put('/prenominas/:id', authorize(...rolesNomina), actualizarPreNomina);
+
+// Recursos Financieros sube el documento de subsidio (auto-firma).
+router.post(
+  '/ciclo/:id/subsidio',
+  authorize(Rol.RECURSOS_FINANCIEROS, Rol.RRHH_FINANZAS, Rol.ADMIN_GENERAL),
+  uploadNominaArchivo.single('archivo'),
+  subirSubsidio
+);
+
+// RH sube la nómina final escaneada con la firma del trabajador (auto-firma).
+router.post(
+  '/ciclo/:id/nomina-final',
+  authorize(Rol.RECURSOS_HUMANOS, Rol.RRHH_FINANZAS, Rol.ADMIN_GENERAL),
+  uploadNominaArchivo.single('archivo'),
+  subirNominaFinal
+);
 
 export default router;

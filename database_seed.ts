@@ -28,9 +28,15 @@ async function main() {
     { correo: 'admisiones@marakame.com', nombre: 'Ana', apellidos: 'López', rol: Rol.ADMISIONES },
     { correo: 'psicologia@marakame.com', nombre: 'Lic. Martha', apellidos: 'Sánchez', rol: Rol.PSICOLOGIA },
     { correo: 'nutricion@marakame.com', nombre: 'Cecilia', apellidos: 'Ríos', rol: Rol.NUTRICION },
-    { correo: 'finanzas@marakame.com', nombre: 'Ricardo', apellidos: 'Contador', rol: Rol.RRHH_FINANZAS },
+    // Administración General: usuario "paraguas" del depto. de Administración (alberga RH y Finanzas).
+    // Conserva el rol legacy RRHH_FINANZAS porque puede actuar como ambos cuando hace falta.
+    { correo: 'administracion@marakame.com', nombre: 'Administración', apellidos: 'General', rol: Rol.RRHH_FINANZAS },
     { correo: 'almacen@marakame.com', nombre: 'Pablo', apellidos: 'Logística', rol: Rol.ALMACEN },
     { correo: 'jefemedico@marakame.com', nombre: 'Dr. Carlos', apellidos: 'Ramírez', rol: Rol.JEFE_MEDICO },
+    // Roles dedicados del flujo de pre-nómina (separados del rol legacy RRHH_FINANZAS)
+    { correo: 'rrhh@marakame.com',         nombre: 'Lucía',    apellidos: 'Vega',     rol: Rol.RECURSOS_HUMANOS },
+    { correo: 'financieros@marakame.com',  nombre: 'Marco',    apellidos: 'Tesorero', rol: Rol.RECURSOS_FINANCIEROS },
+    { correo: 'jefatura@marakame.com',     nombre: 'Patricia', apellidos: 'Mendoza',  rol: Rol.JEFE_ADMINISTRATIVO },
   ];
 
   for (const u of usuarios) {

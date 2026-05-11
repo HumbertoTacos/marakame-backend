@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 import { AppError } from '../middlewares/errorHandler';
+import { crearNotificacion } from '../utils/notificaciones';
 
 // ============================================================
 // EMPLEADOS
@@ -58,8 +59,9 @@ export const generarNomina = async (req: Request, res: Response) => {
     const folio = `NOM-${currentYear}-${String(count + 1).padStart(3, '0')}`;
 
     // 2. Crear la Nómina principal.
-    // Estado inicial PRE_NOMINA: RH ya subió el archivo, ahora pasa a Finanzas para solicitar subsidio.
+    // Estado inicial PRE_NOMINA: RH subió el archivo, ahora pasa a Finanzas para solicitar subsidio.
     // No calculamos nada por empleado; los totales y el desglose viven en el archivo de CONTPAQi.
+    // RH NO firma aquí: su firma es al final del flujo cuando ya recibió la nómina firmada por el trabajador.
     const nomina = await prisma.nomina.create({
       data: {
         folio,
@@ -68,11 +70,18 @@ export const generarNomina = async (req: Request, res: Response) => {
         fechaFin: new Date(fechaFin),
         estado: 'PRE_NOMINA',
         regimen: regimen || null,
-        archivoUrl: `/uploads/nominas/${archivo.filename}`,
-        // RH ya hizo su parte al generar y subir el archivo.
-        firmaRecursosHumanos: true
+        archivoUrl: `/uploads/nominas/${archivo.filename}`
       }
     });
+
+    // Notifica a quien debe actuar (Finanzas) y a quienes deben enterarse (Administración / RH).
+    const notifMsg = `Pre-nómina ${folio} (${periodo}) subida por RH. Esperando documento de subsidio.`;
+    const notifLink = `/nominas/${nomina.id}`;
+    await Promise.all([
+      crearNotificacion({ rol: 'RECURSOS_FINANCIEROS' as any, titulo: 'Nueva pre-nómina pendiente', mensaje: notifMsg, link: notifLink, tipo: 'ALERTA' as any }),
+      crearNotificacion({ rol: 'RRHH_FINANZAS' as any,       titulo: 'Nueva pre-nómina pendiente', mensaje: notifMsg, link: notifLink, tipo: 'INFO' as any }),
+      crearNotificacion({ rol: 'JEFE_ADMINISTRATIVO' as any, titulo: 'Nueva pre-nómina iniciada', mensaje: notifMsg, link: notifLink, tipo: 'INFO' as any })
+    ]);
 
     res.status(201).json({ success: true, data: nomina });
 
@@ -113,12 +122,14 @@ export const firmarNomina = async (req: Request, res: Response) => {
     // Cada paso lo firma su rol específico. Mantenemos compatibilidad con el rol legacy RRHH_FINANZAS
     // y con ADMIN_GENERAL (que actúa como super-admin con permisos de cualquier paso).
 
+    // Flujo simplificado: Administración (administracion@marakame.com) cubre tanto Jefatura como
+    // Dirección General. Su firma única avanza directo a AUTORIZADO. Dirección General se elimina
+    // del flujo: admin@marakame.com no participa.
     const esFinanzas = rolUsuario === 'RECURSOS_FINANCIEROS' || rolUsuario === 'RRHH_FINANZAS' || rolUsuario === 'ADMIN_GENERAL';
-    const esJefatura = rolUsuario === 'JEFE_ADMINISTRATIVO' || rolUsuario === 'ADMIN_GENERAL';
-    const esDireccion = rolUsuario === 'ADMIN_GENERAL';
+    const esAdministracion = rolUsuario === 'RRHH_FINANZAS' || rolUsuario === 'JEFE_ADMINISTRATIVO';
     const esRH = rolUsuario === 'RECURSOS_HUMANOS' || rolUsuario === 'RRHH_FINANZAS' || rolUsuario === 'ADMIN_GENERAL';
 
-    let firmaACambiar: 'firmaFinanzas' | 'firmaAdministracion' | 'firmaDireccion' | 'firmaRecursosHumanos' | null = null;
+    let firmaACambiar: 'firmaFinanzas' | 'firmaAdministracion' | 'firmaRecursosHumanos' | null = null;
     let etiquetaPaso = '';
 
     if (!nomina.firmaFinanzas) {
@@ -128,25 +139,19 @@ export const firmarNomina = async (req: Request, res: Response) => {
         etiquetaPaso = 'Recursos Financieros (solicitud de subsidio)';
       }
     } else if (!nomina.firmaAdministracion) {
-      // Paso 2: Jefatura del Departamento de Administración revisa
-      if (esJefatura) {
+      // Paso 2: Administración General revisa y autoriza (cubre Jefatura + Dirección).
+      if (esAdministracion) {
         firmaACambiar = 'firmaAdministracion';
-        etiquetaPaso = 'Jefatura Administrativa (revisión)';
-      }
-    } else if (!nomina.firmaDireccion) {
-      // Paso 3: Dirección General autoriza
-      if (esDireccion) {
-        firmaACambiar = 'firmaDireccion';
-        etiquetaPaso = 'Dirección General (autorización del subsidio)';
+        etiquetaPaso = 'Administración General (revisión y autorización)';
       }
     } else if (!nomina.firmaRecursosHumanos) {
-      // Paso 4: Recursos Humanos cierra el ciclo (paso penúltimo de la prenomina antes del archivado)
+      // Paso 3: Recursos Humanos cierra el ciclo subiendo la nómina firmada por el trabajador.
       if (esRH) {
         firmaACambiar = 'firmaRecursosHumanos';
         etiquetaPaso = 'Recursos Humanos (cierre del ciclo)';
       }
     } else {
-      return res.status(400).json({ success: false, message: 'La nómina ya tiene las 4 firmas registradas.' });
+      return res.status(400).json({ success: false, message: 'La nómina ya tiene todas las firmas registradas.' });
     }
 
     if (!firmaACambiar) {
@@ -160,15 +165,14 @@ export const firmarNomina = async (req: Request, res: Response) => {
 
     // Cambios de estado a lo largo del flujo:
     // PRE_NOMINA → SOLICITUD_SUBSIDIO al firmar Finanzas
-    // SOLICITUD_SUBSIDIO → EN_REVISION al firmar Administración
-    // EN_REVISION → AUTORIZADO al firmar Dirección
+    // SOLICITUD_SUBSIDIO → AUTORIZADO al firmar Administración (cubre Jefatura + Dirección)
     // AUTORIZADO se mantiene cuando RH cierra; el archivado lo pasa a PAGADO.
     if (firmaACambiar === 'firmaFinanzas') {
       dataToUpdate.estado = 'SOLICITUD_SUBSIDIO';
       dataToUpdate.fechaSolicitudSubsidio = new Date();
     } else if (firmaACambiar === 'firmaAdministracion') {
-      dataToUpdate.estado = 'EN_REVISION';
-    } else if (firmaACambiar === 'firmaDireccion') {
+      // Auto-firma de Dirección: el rol admin ya no participa, queda implícito en Administración.
+      dataToUpdate.firmaDireccion = true;
       dataToUpdate.estado = 'AUTORIZADO';
       dataToUpdate.fechaAutorizacion = new Date();
       dataToUpdate.usuarioAutorizaId = req.usuario!.id;
@@ -178,6 +182,24 @@ export const firmarNomina = async (req: Request, res: Response) => {
       where: { id: Number(id) },
       data: dataToUpdate
     });
+
+    // Notificar al siguiente paso del flujo.
+    const link3 = `/nominas/${actualizada.id}`;
+    if (firmaACambiar === 'firmaAdministracion') {
+      // Administración firmó → RH debe subir la nómina firmada por el trabajador.
+      const msg = `Pre-nómina ${actualizada.folio} autorizada. RH debe subir la nómina firmada por el trabajador.`;
+      await Promise.all([
+        crearNotificacion({ rol: 'RECURSOS_HUMANOS' as any, titulo: 'Pre-nómina autorizada', mensaje: msg, link: link3, tipo: 'ALERTA' as any }),
+        crearNotificacion({ rol: 'RRHH_FINANZAS' as any,    titulo: 'Pre-nómina autorizada', mensaje: msg, link: link3, tipo: 'INFO' as any })
+      ]);
+    } else if (firmaACambiar === 'firmaFinanzas') {
+      // Caso fallback (firmar sin subir subsidio) — notifica a administración.
+      const msg = `Pre-nómina ${actualizada.folio} firmada por Finanzas. Esperando revisión de Administración.`;
+      await Promise.all([
+        crearNotificacion({ rol: 'RRHH_FINANZAS' as any,       titulo: 'Pre-nómina pendiente de firma', mensaje: msg, link: link3, tipo: 'ALERTA' as any }),
+        crearNotificacion({ rol: 'JEFE_ADMINISTRATIVO' as any, titulo: 'Pre-nómina pendiente de firma', mensaje: msg, link: link3, tipo: 'ALERTA' as any })
+      ]);
+    }
 
     res.json({
       success: true,
@@ -415,20 +437,15 @@ export const guardarAsistencias = async (req: Request, res: Response) => {
       }
     }
 
-    // 1. Buscar la Nómina que esté actualmente en curso
+    // 1. Buscar la Nómina que esté actualmente en curso (opcional).
+    // Si no hay nómina abierta, igual se registra la asistencia: el control diario
+    // es independiente del ciclo de nómina y debe poder hacerse cualquier día.
     const nominaActiva = await prisma.nomina.findFirst({
       where: {
         estado: { in: ['BORRADOR', 'PRE_NOMINA', 'EN_REVISION'] }
       },
       orderBy: { id: 'desc' }
     });
-
-    if (!nominaActiva) {
-      return res.status(400).json({
-        success: false,
-        message: 'No hay un periodo de nómina abierto. RRHH debe generar una nueva nómina primero.'
-      });
-    }
 
     // 2. Bloqueo: si ya hay registros para alguno de estos empleados en la fecha, rechazamos.
     const fechaInicio = new Date(fecha);
@@ -453,21 +470,33 @@ export const guardarAsistencias = async (req: Request, res: Response) => {
       });
     }
 
-    // 3. Preparar los datos (incluyendo URL del documento si subieron archivo)
-    const datosAInsertar = registros.map((reg: any) => ({
-      fecha: new Date(fecha),
-      tipo: reg.tipo,
-      motivoJustificacion: reg.motivo || null,
-      documentoUrl: archivosPorEmpleado[String(reg.empleadoId)] || null,
-      estadoJustificacion: reg.tipo === 'ASISTENCIA' ? 'NO_APLICA' : 'PENDIENTE',
-      empleadoId: Number(reg.empleadoId),
-      nominaId: nominaActiva.id,
-      registradoPorId: usuarioId
-    }));
+    // 3. Preparar los datos (incluyendo URL del documento si subieron archivo).
+    // Regla del estadoJustificacion:
+    //   - ASISTENCIA → NO_APLICA (no hay incidencia que justificar)
+    //   - FALTA/RETARDO + el jefe dijo que SÍ tiene justificante → PENDIENTE (admin debe revisar)
+    //   - FALTA/RETARDO + el jefe dijo que NO tiene justificante → RECHAZADA (es falta directa, sin nada que revisar)
+    const datosAInsertar = registros.map((reg: any) => {
+      let estadoJustificacion: 'NO_APLICA' | 'PENDIENTE' | 'RECHAZADA' = 'NO_APLICA';
+      if (reg.tipo !== 'ASISTENCIA') {
+        estadoJustificacion = reg.quiereJustificar === true ? 'PENDIENTE' : 'RECHAZADA';
+      }
+      // Omitimos `nominaId` cuando no hay nómina abierta (la columna es opcional en BD).
+      const base: any = {
+        fecha: new Date(fecha),
+        tipo: reg.tipo,
+        motivoJustificacion: reg.quiereJustificar ? (reg.motivo || null) : null,
+        documentoUrl: archivosPorEmpleado[String(reg.empleadoId)] || null,
+        estadoJustificacion,
+        empleadoId: Number(reg.empleadoId),
+        registradoPorId: usuarioId
+      };
+      if (nominaActiva) base.nominaId = nominaActiva.id;
+      return base;
+    });
 
     // 4. Guardar en la base de datos
     const resultado = await prisma.registroAsistencia.createMany({
-      data: datosAInsertar,
+      data: datosAInsertar as any,
       skipDuplicates: true
     });
 
@@ -480,6 +509,86 @@ export const guardarAsistencias = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error("Error al guardar asistencias:", error);
     res.status(500).json({ success: false, message: 'Error interno al guardar asistencias', detalle: error.message });
+  }
+};
+
+// Recursos Financieros sube el documento de solicitud de subsidio.
+// Esto AUTO-firma el paso de Finanzas y avanza el estado a SOLICITUD_SUBSIDIO.
+export const subirSubsidio = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const archivo = (req as any).file as Express.Multer.File | undefined;
+    if (!archivo) {
+      return res.status(400).json({ success: false, message: 'Debes adjuntar el documento de subsidio.' });
+    }
+
+    const nomina = await prisma.nomina.findUnique({ where: { id: Number(id) } });
+    if (!nomina) return res.status(404).json({ success: false, message: 'Nómina no encontrada.' });
+    if (nomina.firmaFinanzas) {
+      return res.status(400).json({ success: false, message: 'Esta nómina ya tiene firma de Finanzas.' });
+    }
+
+    const actualizada = await prisma.nomina.update({
+      where: { id: Number(id) },
+      data: {
+        archivoSubsidioUrl: `/uploads/nominas/${archivo.filename}`,
+        firmaFinanzas: true,
+        estado: 'SOLICITUD_SUBSIDIO',
+        fechaSolicitudSubsidio: new Date()
+      }
+    });
+
+    // Notifica al siguiente paso: Administración General y Jefatura Administrativa.
+    const msg2 = `Pre-nómina ${actualizada.folio} (${actualizada.periodo}) con subsidio listo. Esperando tu firma.`;
+    const link2 = `/nominas/${actualizada.id}`;
+    await Promise.all([
+      crearNotificacion({ rol: 'RRHH_FINANZAS' as any,       titulo: 'Pre-nómina pendiente de firma', mensaje: msg2, link: link2, tipo: 'ALERTA' as any }),
+      crearNotificacion({ rol: 'JEFE_ADMINISTRATIVO' as any, titulo: 'Pre-nómina pendiente de firma', mensaje: msg2, link: link2, tipo: 'ALERTA' as any })
+    ]);
+
+    res.json({ success: true, message: 'Documento de subsidio subido y firma de Finanzas aplicada.', data: actualizada });
+  } catch (error: any) {
+    console.error('Error subiendo subsidio:', error);
+    res.status(500).json({ success: false, message: 'Error interno', detalle: error.message });
+  }
+};
+
+// RH sube la nómina final escaneada con la firma del trabajador (cierre del ciclo).
+// Aplica la firma de RH y deja la nómina lista para que Finanzas la archive.
+export const subirNominaFinal = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const archivo = (req as any).file as Express.Multer.File | undefined;
+    if (!archivo) {
+      return res.status(400).json({ success: false, message: 'Debes adjuntar la nómina escaneada con firmas.' });
+    }
+
+    const nomina = await prisma.nomina.findUnique({ where: { id: Number(id) } });
+    if (!nomina) return res.status(404).json({ success: false, message: 'Nómina no encontrada.' });
+    if (nomina.estado !== 'AUTORIZADO') {
+      return res.status(400).json({ success: false, message: 'La nómina debe estar AUTORIZADA antes de subir el documento firmado.' });
+    }
+
+    const actualizada = await prisma.nomina.update({
+      where: { id: Number(id) },
+      data: {
+        archivoNominaFinalUrl: `/uploads/nominas/${archivo.filename}`,
+        firmaRecursosHumanos: true
+      }
+    });
+
+    // Notifica a Finanzas (deben archivar) y a Administración (queda enterada del cierre).
+    const msg4 = `Nómina ${actualizada.folio} firmada por el trabajador. Lista para archivar.`;
+    const link4 = `/nominas/${actualizada.id}`;
+    await Promise.all([
+      crearNotificacion({ rol: 'RECURSOS_FINANCIEROS' as any, titulo: 'Nómina lista para archivar', mensaje: msg4, link: link4, tipo: 'ALERTA' as any }),
+      crearNotificacion({ rol: 'RRHH_FINANZAS' as any,        titulo: 'Nómina lista para archivar', mensaje: msg4, link: link4, tipo: 'INFO' as any })
+    ]);
+
+    res.json({ success: true, message: 'Nómina firmada por el trabajador subida. Lista para archivar.', data: actualizada });
+  } catch (error: any) {
+    console.error('Error subiendo nómina final:', error);
+    res.status(500).json({ success: false, message: 'Error interno', detalle: error.message });
   }
 };
 

@@ -41,8 +41,10 @@ model RegistroAsistencia {
   empleadoId             Int
   empleado               Empleado            @relation(fields: [empleadoId], references: [id])
   
-  nominaId               Int
-  nomina                 Nomina              @relation(fields: [nominaId], references: [id])
+  // nominaId es opcional: la asistencia se puede registrar haya o no una nómina abierta.
+  // Cuando se cierra el ciclo de nómina, las asistencias del periodo se asocian para reportes.
+  nominaId               Int?
+  nomina                 Nomina?             @relation(fields: [nominaId], references: [id])
   
   // --- AUDITORÍA ---
   registradoPorId        Int?                
@@ -1518,6 +1520,10 @@ model Nomina {
   totalGeneral           Float?       @default(0)
   regimen                String?
   archivoUrl             String?
+  // Documento de solicitud de subsidio que sube Recursos Financieros (paso 2 del flujo).
+  archivoSubsidioUrl     String?
+  // Nómina final escaneada con la firma del trabajador, que sube RH al cierre del ciclo.
+  archivoNominaFinalUrl  String?
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
 
