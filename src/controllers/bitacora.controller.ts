@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 
-export const getAuditoria = async (req: Request, res: Response) => {
+export const getBitacoraLogs = async (req: Request, res: Response) => {
   const { modulo, usuarioId, fechaInicio, fechaFin } = req.query;
 
   const whereArgs: any = {};
@@ -40,6 +40,6 @@ export const registrarAccion = async (usuarioId: number, accion: string, modulo:
       }
     });
   } catch (error) {
-    console.error('Error al registrar auditoría transversal:', error);
+    console.error('Error al registrar bitácora transversal:', error);
   }
 };

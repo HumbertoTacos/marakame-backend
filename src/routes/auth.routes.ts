@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { prisma } from '../utils/prisma';
 import { AppError } from '../middlewares/errorHandler';
 import { authenticate } from '../middlewares/auth';
-import { registrarAuditoria } from '../utils/auditoria';
+import { registrarBitacora } from '../utils/auditoria';
 
 const router = Router();
 
@@ -53,7 +53,7 @@ router.post('/login', async (req, res) => {
     data: { ultimoAcceso: new Date() },
   });
 
-  await registrarAuditoria(usuario.id, 'LOGIN', 'auth', { correo });
+  await registrarBitacora(usuario.id, 'LOGIN', 'auth', { correo });
 
   const { accessToken, refreshToken } = generarTokens({
     id: usuario.id,
@@ -128,7 +128,7 @@ router.get('/me', authenticate, async (req, res) => {
 
 // POST /api/v1/auth/logout
 router.post('/logout', authenticate, async (req, res) => {
-  await registrarAuditoria(req.usuario!.id, 'LOGOUT', 'auth', {});
+  await registrarBitacora(req.usuario!.id, 'LOGOUT', 'auth', {});
   res.json({ success: true, message: 'Sesión cerrada correctamente.' });
 });
 
