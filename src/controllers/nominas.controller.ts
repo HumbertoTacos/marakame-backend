@@ -1,4 +1,6 @@
 import { Request, Response } from 'express';
+import fs from 'fs';
+import path from 'path';
 import { prisma } from '../utils/prisma';
 import { AppError } from '../middlewares/errorHandler';
 import { crearNotificacion } from '../utils/notificaciones';
@@ -30,6 +32,41 @@ export const getEmpleados = async (req: Request, res: Response) => {
     orderBy: { nombre: 'asc' }
   });
   res.json({ success: true, data: empleados });
+};
+
+export const updateEmpleado = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ success: false, message: 'ID inválido.' });
+    }
+
+    const { nombre, apellidos, puesto, departamento, regimen, salarioBase, compensacionFija, activo } = req.body;
+
+    // Sólo actualizamos campos que vienen en el body — así un toggle de activo no borra el sueldo.
+    const data: any = {};
+    if (nombre !== undefined)           data.nombre = String(nombre).trim();
+    if (apellidos !== undefined)        data.apellidos = String(apellidos).trim();
+    if (puesto !== undefined)           data.puesto = String(puesto).trim();
+    if (departamento !== undefined)     data.departamento = String(departamento).trim();
+    if (regimen !== undefined)          data.regimen = regimen;
+    if (salarioBase !== undefined)      data.salarioBase = parseFloat(salarioBase);
+    if (compensacionFija !== undefined) data.compensacionFija = parseFloat(compensacionFija);
+    if (activo !== undefined)           data.activo = Boolean(activo);
+
+    if (Object.keys(data).length === 0) {
+      return res.status(400).json({ success: false, message: 'No hay datos para actualizar.' });
+    }
+
+    const empleado = await prisma.empleado.update({ where: { id }, data });
+    res.json({ success: true, data: empleado });
+  } catch (error: any) {
+    if (error?.code === 'P2025') {
+      return res.status(404).json({ success: false, message: 'Empleado no encontrado.' });
+    }
+    console.error('Error al actualizar empleado:', error);
+    res.status(500).json({ success: false, message: 'Error interno al actualizar empleado', detalle: error.message });
+  }
 };
 
 // ============================================================
@@ -122,12 +159,13 @@ export const firmarNomina = async (req: Request, res: Response) => {
     // Cada paso lo firma su rol específico. Mantenemos compatibilidad con el rol legacy RRHH_FINANZAS
     // y con ADMIN_GENERAL (que actúa como super-admin con permisos de cualquier paso).
 
-    // Flujo simplificado: Administración (administracion@marakame.com) cubre tanto Jefatura como
-    // Dirección General. Su firma única avanza directo a AUTORIZADO. Dirección General se elimina
-    // del flujo: admin@marakame.com no participa.
-    const esFinanzas = rolUsuario === 'RECURSOS_FINANCIEROS' || rolUsuario === 'RRHH_FINANZAS' || rolUsuario === 'ADMIN_GENERAL';
-    const esAdministracion = rolUsuario === 'RRHH_FINANZAS' || rolUsuario === 'JEFE_ADMINISTRATIVO';
-    const esRH = rolUsuario === 'RECURSOS_HUMANOS' || rolUsuario === 'RRHH_FINANZAS' || rolUsuario === 'ADMIN_GENERAL';
+    // Flujo simplificado. admin@marakame.com NO participa.
+    // - Finanzas (paso 1): RECURSOS_FINANCIEROS o RRHH_FINANZAS
+    // - Jefatura Administrativa (paso 2): SÓLO JEFE_ADMINISTRATIVO firma y manda la lista a RH
+    // - RH cierre (paso 3): RECURSOS_HUMANOS o RRHH_FINANZAS
+    const esFinanzas = rolUsuario === 'RECURSOS_FINANCIEROS' || rolUsuario === 'RRHH_FINANZAS';
+    const esAdministracion = rolUsuario === 'JEFE_ADMINISTRATIVO';
+    const esRH = rolUsuario === 'RECURSOS_HUMANOS' || rolUsuario === 'RRHH_FINANZAS';
 
     let firmaACambiar: 'firmaFinanzas' | 'firmaAdministracion' | 'firmaRecursosHumanos' | null = null;
     let etiquetaPaso = '';
@@ -140,7 +178,14 @@ export const firmarNomina = async (req: Request, res: Response) => {
       }
     } else if (!nomina.firmaAdministracion) {
       // Paso 2: Administración General revisa y autoriza (cubre Jefatura + Dirección).
+      // Requisito: debe haber subido antes el reporte de asistencias quincenal firmado.
       if (esAdministracion) {
+        if (!nomina.archivoAsistenciasUrl) {
+          return res.status(400).json({
+            success: false,
+            message: 'Antes de firmar, Administración debe subir el reporte de asistencias quincenal firmado.'
+          });
+        }
         firmaACambiar = 'firmaAdministracion';
         etiquetaPaso = 'Administración General (revisión y autorización)';
       }
@@ -549,6 +594,111 @@ export const subirSubsidio = async (req: Request, res: Response) => {
     res.json({ success: true, message: 'Documento de subsidio subido y firma de Finanzas aplicada.', data: actualizada });
   } catch (error: any) {
     console.error('Error subiendo subsidio:', error);
+    res.status(500).json({ success: false, message: 'Error interno', detalle: error.message });
+  }
+};
+
+// Jefatura Administrativa firma su paso y manda la lista de asistencias quincenal a RH.
+// Genera el CSV de asistencias del periodo de la nómina DESDE LA BD (sin subir nada manualmente),
+// lo guarda en /uploads/nominas y aplica la firma de Administración → estado AUTORIZADO.
+export const enviarAsistenciasARH = async (req: Request, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+
+    const nomina = await prisma.nomina.findUnique({ where: { id } });
+    if (!nomina) return res.status(404).json({ success: false, message: 'Nómina no encontrada.' });
+    if (!nomina.firmaFinanzas) {
+      return res.status(400).json({ success: false, message: 'Finanzas debe firmar primero (subir documento de subsidio) antes de Administración.' });
+    }
+    // Si ya tiene firma de Administración pero NO tiene archivo de asistencias (residuo de bugs previos),
+    // permitimos regenerar el archivo. Si ya tiene archivo Y firma, rechazamos para no duplicar.
+    const yaFirmadoConArchivo = nomina.firmaAdministracion && (nomina as any).archivoAsistenciasUrl;
+    if (yaFirmadoConArchivo) {
+      return res.status(400).json({ success: false, message: 'Esta nómina ya tiene firma de Administración y archivo de asistencias.' });
+    }
+
+    // 1. Consulta asistencias del periodo de la nómina (rango fechaInicio → fechaFin, inclusivo)
+    const inicio = new Date(nomina.fechaInicio); inicio.setUTCHours(0, 0, 0, 0);
+    const fin    = new Date(nomina.fechaFin);    fin.setUTCHours(23, 59, 59, 999);
+    const asistencias = await prisma.registroAsistencia.findMany({
+      where: { fecha: { gte: inicio, lte: fin } },
+      include: { empleado: true },
+      orderBy: [{ fecha: 'asc' }]
+    });
+
+    // 2. Construye el CSV
+    const escapeCsv = (s: any) => {
+      const v = (s ?? '').toString();
+      return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+    };
+    const formatFecha = (d: Date) => {
+      const y = d.getUTCFullYear();
+      const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(d.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+
+    const lineas: string[] = [];
+    lineas.push(`REPORTE DE ASISTENCIAS - ${nomina.periodo}`);
+    lineas.push(`Folio nómina: ${nomina.folio}`);
+    lineas.push(`Periodo: ${formatFecha(inicio)} a ${formatFecha(fin)}`);
+    lineas.push('');
+    lineas.push('Departamento,Empleado,Puesto,Fecha,Tipo,Justificación,Motivo');
+
+    for (const a of asistencias) {
+      const emp = a.empleado;
+      const fila = [
+        escapeCsv(emp?.departamento || 'SIN ASIGNAR'),
+        escapeCsv(`${emp?.nombre || ''} ${emp?.apellidos || ''}`.trim()),
+        escapeCsv(emp?.puesto || ''),
+        escapeCsv(formatFecha(new Date(a.fecha))),
+        escapeCsv(a.tipo),
+        escapeCsv(a.estadoJustificacion),
+        escapeCsv(a.motivoJustificacion || '')
+      ].join(',');
+      lineas.push(fila);
+    }
+
+    lineas.push('');
+    lineas.push(`Total registros: ${asistencias.length}`);
+    lineas.push('Firmado y enviado por Administración General');
+
+    const dir = path.join('uploads', 'nominas');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const filename = `ASIST_${Date.now()}_${nomina.folio.replace(/[^A-Za-z0-9-]/g, '_')}.csv`;
+    const filepath = path.join(dir, filename);
+    // BOM UTF-8 al inicio para que Excel reconozca acentos
+    fs.writeFileSync(filepath, '﻿' + lineas.join('\n'), { encoding: 'utf8' });
+    console.log(`[Nomina ${nomina.folio}] reporte de asistencias generado: ${filepath} (${asistencias.length} registros)`);
+
+    // 3. Actualiza la nómina: firma Administración + Dirección, estado AUTORIZADO
+    const actualizada = await prisma.nomina.update({
+      where: { id },
+      data: {
+        archivoAsistenciasUrl: `/uploads/nominas/${filename}`,
+        firmaAdministracion: true,
+        firmaDireccion: true,
+        estado: 'AUTORIZADO',
+        fechaAutorizacion: new Date(),
+        usuarioAutorizaId: req.usuario!.id
+      }
+    });
+
+    // 4. Notifica a RH (su turno)
+    const msg = `Pre-nómina ${actualizada.folio} autorizada. Reporte de asistencias enviado para armar la nómina final.`;
+    const link = `/nominas/${actualizada.id}`;
+    await Promise.all([
+      crearNotificacion({ rol: 'RECURSOS_HUMANOS' as any, titulo: 'Pre-nómina autorizada', mensaje: msg, link, tipo: 'ALERTA' as any }),
+      crearNotificacion({ rol: 'RRHH_FINANZAS' as any,    titulo: 'Pre-nómina autorizada', mensaje: msg, link, tipo: 'INFO' as any })
+    ]);
+
+    res.json({
+      success: true,
+      message: `Lista de asistencias enviada a RH (${asistencias.length} registros). Firma aplicada.`,
+      data: actualizada
+    });
+  } catch (error: any) {
+    console.error('Error enviando asistencias a RH:', error);
     res.status(500).json({ success: false, message: 'Error interno', detalle: error.message });
   }
 };

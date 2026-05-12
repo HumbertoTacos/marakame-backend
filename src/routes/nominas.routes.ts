@@ -5,6 +5,7 @@ import { uploadJustificante, uploadNominaArchivo } from '../utils/multerConfig';
 import {
   createEmpleado,
   getEmpleados,
+  updateEmpleado,
   generarNomina,
   getNominas,
   getNominaById,
@@ -16,6 +17,7 @@ import {
   obtenerAsistencias,
   decidirJustificacion,
   subirSubsidio,
+  enviarAsistenciasARH,
   subirNominaFinal
 } from '../controllers/nominas.controller';
 
@@ -63,8 +65,9 @@ router.patch(
 // RUTAS RESTRINGIDAS (Uso exclusivo de RRHH y Directora)
 // ============================================================
 
-// Solo RRHH puede dar de alta nuevos empleados o editar salarios
+// Solo RRHH/Admón puede dar de alta nuevos empleados, editar datos o dar de baja
 router.post('/empleados', authorize(...rolesNomina), createEmpleado);
+router.put('/empleados/:id', authorize(...rolesNomina), updateEmpleado);
 
 // Ciclos de Nómina (RH sube el archivo de CONTPAQi)
 router.post('/ciclo', authorize(...rolesNomina), uploadNominaArchivo.single('archivo'), generarNomina);
@@ -85,6 +88,15 @@ router.post(
   authorize(Rol.RECURSOS_FINANCIEROS, Rol.RRHH_FINANZAS, Rol.ADMIN_GENERAL),
   uploadNominaArchivo.single('archivo'),
   subirSubsidio
+);
+
+// Sólo Jefatura Administrativa firma este paso y envía la lista quincenal de asistencias a RH.
+// El CSV se genera server-side a partir de los registros del periodo de la nómina.
+// admin@marakame.com (ADMIN_GENERAL) y administracion@marakame.com (RRHH_FINANZAS) NO participan.
+router.post(
+  '/ciclo/:id/asistencias-firmadas',
+  authorize(Rol.JEFE_ADMINISTRATIVO),
+  enviarAsistenciasARH
 );
 
 // RH sube la nómina final escaneada con la firma del trabajador (auto-firma).

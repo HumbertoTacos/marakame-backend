@@ -1522,6 +1522,9 @@ model Nomina {
   archivoUrl             String?
   // Documento de solicitud de subsidio que sube Recursos Financieros (paso 2 del flujo).
   archivoSubsidioUrl     String?
+  // Reporte de asistencias quincenal firmado que sube la Jefatura Administrativa antes de
+  // firmar su paso (requisito para que RH pueda hacer la nómina final).
+  archivoAsistenciasUrl  String?
   // Nómina final escaneada con la firma del trabajador, que sube RH al cierre del ciclo.
   archivoNominaFinalUrl  String?
   createdAt              DateTime     @default(now())
