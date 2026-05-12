@@ -17,6 +17,7 @@ import {
   obtenerAsistencias,
   decidirJustificacion,
   subirSubsidio,
+  firmarAdministracion,
   enviarAsistenciasARH,
   subirNominaFinal
 } from '../controllers/nominas.controller';
@@ -90,9 +91,17 @@ router.post(
   subirSubsidio
 );
 
-// Sólo Jefatura Administrativa firma este paso y envía la lista quincenal de asistencias a RH.
+// Paso intermedio: Administración (administracion@marakame.com, rol RRHH_FINANZAS) firma con un
+// botón después de Finanzas. No sube documento — sólo valida y aplica firma.
+router.post(
+  '/ciclo/:id/administracion-firma',
+  authorize(Rol.RRHH_FINANZAS),
+  firmarAdministracion
+);
+
+// Jefatura Administrativa firma su paso y envía la lista quincenal de asistencias a RH.
 // El CSV se genera server-side a partir de los registros del periodo de la nómina.
-// admin@marakame.com (ADMIN_GENERAL) y administracion@marakame.com (RRHH_FINANZAS) NO participan.
+// Requiere que Administración haya firmado primero.
 router.post(
   '/ciclo/:id/asistencias-firmadas',
   authorize(Rol.JEFE_ADMINISTRATIVO),
