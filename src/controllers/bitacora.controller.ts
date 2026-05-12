@@ -15,6 +15,12 @@ export const getBitacoraLogs = async (req: Request, res: Response) => {
     if (fechaFin) whereArgs.createdAt.lte = new Date(fechaFin as string);
   }
 
+  if (req.usuario!.rol !== 'ADMIN_GENERAL') {
+    whereArgs.usuario = {
+      rol: req.usuario!.rol
+    };
+  }
+
   const logs = await prisma.auditoria.findMany({
     where: whereArgs,
     include: {
