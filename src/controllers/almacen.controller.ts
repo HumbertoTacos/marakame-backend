@@ -385,6 +385,11 @@ export const registerMovimiento = async (req: Request, res: Response) => {
   // 13. RESPUESTA
   // ============================================================
 
+  const auditBody = { ...req.body };
+  delete auditBody.productoId;
+  auditBody.producto = producto.nombre;
+  res.locals.auditBodyOverride = auditBody;
+
   res.status(201).json({
     success: true,
     message: tipo === 'ENTRADA'

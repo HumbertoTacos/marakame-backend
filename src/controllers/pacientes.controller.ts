@@ -188,6 +188,35 @@ export const enviarADetox = async (req: Request, res: Response) => {
 };
 
 /**
+ * Finalizar Desintoxicación — asigna cama y regresa al estado INTERNADO en una sola transacción
+ * PATCH /api/v1/pacientes/:id/finalizar-detox
+ * Body: { camaId: number }
+ */
+export const finalizarDetox = async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { camaId } = req.body;
+  const pacienteId = parseInt(id, 10);
+
+  if (!camaId) {
+    throw new AppError(400, 'Se requiere una cama para finalizar la desintoxicación');
+  }
+
+  const paciente = await prisma.$transaction(async (tx) => {
+    await tx.cama.update({
+      where: { id: parseInt(camaId, 10) },
+      data: { pacienteId, estado: EstadoCama.OCUPADA },
+    });
+
+    return tx.paciente.update({
+      where: { id: pacienteId },
+      data: { estado: EstadoPaciente.INTERNADO },
+    });
+  });
+
+  res.json({ success: true, data: paciente });
+};
+
+/**
  * Borrado lógico — establece deletedAt para archivar el registro
  * PATCH /api/v1/pacientes/:id/archivar
  */

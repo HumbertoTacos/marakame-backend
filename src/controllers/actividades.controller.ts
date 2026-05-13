@@ -38,7 +38,7 @@ export const createActividad = async (req: Request, res: Response) => {
 };
 
 export const deleteActividad = async (req: Request, res: Response) => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(req.params.id as string, 10);
   if (isNaN(id)) throw new AppError(400, 'ID de actividad inválido');
 
   const existe = await prisma.actividadMedica.findUnique({ where: { id } });

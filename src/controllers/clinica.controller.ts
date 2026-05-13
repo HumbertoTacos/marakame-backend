@@ -1,14 +1,14 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 import { AppError } from '../middlewares/errorHandler';
-import { registrarAuditoria } from '../utils/auditoria';
+import { registrarBitacora } from '../utils/auditoria';
 
 // ══════════════════════════════════════════════════════════════
 // TRATAMIENTOS MÉDICOS
 // ══════════════════════════════════════════════════════════════
 
 export const getTratamientos = async (req: Request, res: Response) => {
-  const { expedienteId } = req.params;
+  const { expedienteId } = req.params as Record<string, string>;
 
   const tratamientos = await prisma.tratamientoMedico.findMany({
     where: { expedienteId: parseInt(expedienteId, 10) },
@@ -26,7 +26,7 @@ export const getTratamientos = async (req: Request, res: Response) => {
 };
 
 export const crearTratamiento = async (req: Request, res: Response) => {
-  const { expedienteId } = req.params;
+  const { expedienteId } = req.params as Record<string, string>;
   const medicoId = req.usuario!.id;
   const { medicamento, dosis, frecuencia, fechaInicio, fechaFin, indicaciones } = req.body;
 
@@ -53,7 +53,7 @@ export const crearTratamiento = async (req: Request, res: Response) => {
     include: { medico: true }
   });
 
-  await registrarAuditoria(
+  await registrarBitacora(
     medicoId, 'CREATE', 'CLINICA_TRATAMIENTO',
     { tratamientoId: tratamiento.id, medicamento, expedienteId: expedienteIdInt },
     req.ip
@@ -63,7 +63,7 @@ export const crearTratamiento = async (req: Request, res: Response) => {
 };
 
 export const desactivarTratamiento = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id } = req.params as Record<string, string>;
   const usuarioId = req.usuario!.id;
   const tratamientoId = parseInt(id, 10);
 
@@ -76,7 +76,7 @@ export const desactivarTratamiento = async (req: Request, res: Response) => {
     data: { activo: false, fechaFin: new Date() }
   });
 
-  await registrarAuditoria(
+  await registrarBitacora(
     usuarioId, 'UPDATE', 'CLINICA_TRATAMIENTO',
     { tratamientoId, accion: 'DESACTIVADO' },
     req.ip
@@ -90,7 +90,7 @@ export const desactivarTratamiento = async (req: Request, res: Response) => {
 // ══════════════════════════════════════════════════════════════
 
 export const registrarSuministro = async (req: Request, res: Response) => {
-  const { id } = req.params; // tratamientoId
+  const { id } = req.params as Record<string, string>; // tratamientoId
   const enfermeroId = req.usuario!.id;
   const { dosisAplicada, observaciones } = req.body;
 
@@ -112,7 +112,7 @@ export const registrarSuministro = async (req: Request, res: Response) => {
     include: { enfermero: true }
   });
 
-  await registrarAuditoria(
+  await registrarBitacora(
     enfermeroId, 'CREATE', 'CLINICA_SUMINISTRO',
     { suministroId: suministro.id, tratamientoId },
     req.ip
@@ -122,7 +122,7 @@ export const registrarSuministro = async (req: Request, res: Response) => {
 };
 
 export const getSuministros = async (req: Request, res: Response) => {
-  const { id } = req.params; // tratamientoId
+  const { id } = req.params as Record<string, string>; // tratamientoId
 
   const suministros = await prisma.suministroTratamiento.findMany({
     where: { tratamientoId: parseInt(id, 10) },
@@ -138,7 +138,7 @@ export const getSuministros = async (req: Request, res: Response) => {
 // ══════════════════════════════════════════════════════════════
 
 export const getCitas = async (req: Request, res: Response) => {
-  const { pacienteId } = req.params;
+  const { pacienteId } = req.params as Record<string, string>;
 
   const citas = await prisma.citaAgenda.findMany({
     where: { pacienteId: parseInt(pacienteId, 10) },
@@ -173,7 +173,7 @@ export const crearCita = async (req: Request, res: Response) => {
     include: { especialista: true }
   });
 
-  await registrarAuditoria(
+  await registrarBitacora(
     especialistaId, 'CREATE', 'CLINICA_CITA',
     { citaId: cita.id, pacienteId: pacienteIdInt, motivo },
     req.ip
@@ -183,7 +183,7 @@ export const crearCita = async (req: Request, res: Response) => {
 };
 
 export const actualizarCita = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id } = req.params as Record<string, string>;
   const usuarioId = req.usuario!.id;
   const { estado, observaciones } = req.body;
 
@@ -196,7 +196,7 @@ export const actualizarCita = async (req: Request, res: Response) => {
     data: { estado, observaciones }
   });
 
-  await registrarAuditoria(
+  await registrarBitacora(
     usuarioId, 'UPDATE', 'CLINICA_CITA',
     { citaId, nuevoEstado: estado },
     req.ip
@@ -210,7 +210,7 @@ export const actualizarCita = async (req: Request, res: Response) => {
 // ══════════════════════════════════════════════════════════════
 
 export const getEvaluaciones = async (req: Request, res: Response) => {
-  const { pacienteId } = req.params;
+  const { pacienteId } = req.params as Record<string, string>;
 
   const evaluaciones = await (prisma as any).evaluacionResultado.findMany({
     where: { pacienteId: parseInt(pacienteId, 10) },
@@ -222,7 +222,7 @@ export const getEvaluaciones = async (req: Request, res: Response) => {
 };
 
 export const registrarEvaluacion = async (req: Request, res: Response) => {
-  const { pacienteId } = req.params;
+  const { pacienteId } = req.params as Record<string, string>;
   const usuarioId = req.usuario!.id;
   const { instrumento, puntajeTotal, interpretacion, observaciones } = req.body;
 
@@ -246,7 +246,7 @@ export const registrarEvaluacion = async (req: Request, res: Response) => {
     include: { usuario: { select: { id: true, nombre: true, apellidos: true, rol: true } } }
   });
 
-  await registrarAuditoria(
+  await registrarBitacora(
     usuarioId, 'CREATE', 'CLINICA_EVALUACION',
     { evaluacionId: evaluacion.id, instrumento, pacienteId: pacienteIdInt },
     req.ip
@@ -256,7 +256,7 @@ export const registrarEvaluacion = async (req: Request, res: Response) => {
 };
 
 export const actualizarEvaluacion = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id } = req.params as Record<string, string>;
   const usuarioId = req.usuario!.id;
   const { puntajeTotal, interpretacion, observaciones } = req.body;
 
@@ -274,7 +274,7 @@ export const actualizarEvaluacion = async (req: Request, res: Response) => {
     include: { usuario: { select: { id: true, nombre: true, apellidos: true, rol: true } } }
   });
 
-  await registrarAuditoria(
+  await registrarBitacora(
     usuarioId, 'UPDATE', 'CLINICA_EVALUACION',
     { evaluacionId: evalId },
     req.ip
@@ -289,7 +289,7 @@ export const actualizarEvaluacion = async (req: Request, res: Response) => {
 // ══════════════════════════════════════════════════════════════
 
 export const getNotasSesion = async (req: Request, res: Response) => {
-  const { expedienteId, tipo } = req.params;
+  const { expedienteId, tipo } = req.params as Record<string, string>;
 
   const notas = await (prisma as any).notaSesionClinica.findMany({
     where: {
@@ -313,7 +313,7 @@ const ROLES_SESION: Record<string, string[]> = {
 };
 
 export const crearNotaSesion = async (req: Request, res: Response) => {
-  const { expedienteId, tipo } = req.params;
+  const { expedienteId, tipo } = req.params as Record<string, string>;
   const usuarioId = req.usuario!.id;
   const rolUsuario = req.usuario!.rol;
   const { nota, fecha } = req.body;
@@ -342,7 +342,7 @@ export const crearNotaSesion = async (req: Request, res: Response) => {
     }
   });
 
-  await registrarAuditoria(
+  await registrarBitacora(
     usuarioId, 'CREATE', `CLINICA_SESION_${tipo}`,
     { notaId: notaSesion.id, expedienteId: expedienteIdInt },
     req.ip
@@ -356,7 +356,7 @@ export const crearNotaSesion = async (req: Request, res: Response) => {
 // ══════════════════════════════════════════════════════════════
 
 export const getPlanNutricional = async (req: Request, res: Response) => {
-  const { expedienteId } = req.params;
+  const { expedienteId } = req.params as Record<string, string>;
 
   const plan = await (prisma as any).planNutricional.findUnique({
     where: { expedienteId: parseInt(expedienteId, 10) },
@@ -369,7 +369,7 @@ export const getPlanNutricional = async (req: Request, res: Response) => {
 };
 
 export const upsertPlanNutricional = async (req: Request, res: Response) => {
-  const { expedienteId } = req.params;
+  const { expedienteId } = req.params as Record<string, string>;
   const usuarioId = req.usuario!.id;
   const { peso, talla, imc, diagnostico, objetivos, recomendaciones, restricciones, observaciones } = req.body;
 
@@ -396,7 +396,7 @@ export const upsertPlanNutricional = async (req: Request, res: Response) => {
     include: { usuario: { select: { id: true, nombre: true, apellidos: true } } }
   });
 
-  await registrarAuditoria(
+  await registrarBitacora(
     usuarioId, 'UPDATE', 'CLINICA_NUTRICION',
     { planId: plan.id, expedienteId: expedienteIdInt },
     req.ip
