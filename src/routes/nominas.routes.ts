@@ -16,10 +16,10 @@ import {
   guardarAsistencias,
   obtenerAsistencias,
   decidirJustificacion,
+  justificarQuincena,
   subirSubsidio,
   firmarAdministracion,
-  enviarAsistenciasARH,
-  subirNominaFinal
+  cerrarNomina,
 } from '../controllers/nominas.controller';
 
 const router = Router();
@@ -31,14 +31,14 @@ router.use(authenticate);
 // ARREGLOS DE ROLES ESTRICTOS (Usando el Enum de Prisma)
 // ============================================================
 const rolesLideres = [
-  Rol.ADMIN_GENERAL, Rol.RRHH_FINANZAS, Rol.RECURSOS_HUMANOS, Rol.RECURSOS_FINANCIEROS,
-  Rol.JEFE_ADMINISTRATIVO, Rol.JEFE_MEDICO, Rol.AREA_MEDICA,
-  Rol.ADMISIONES, Rol.ALMACEN, Rol.PSICOLOGIA, Rol.NUTRICION, Rol.ENFERMERIA
+  Rol.ADMIN_GENERAL, Rol.DIRECCION_GENERAL, Rol.RRHH_FINANZAS, Rol.RECURSOS_HUMANOS, Rol.RECURSOS_FINANCIEROS,
+  Rol.JEFE_ADMINISTRATIVO, Rol.JEFE_MEDICO, Rol.JEFE_CLINICO, Rol.JEFE_ADMISIONES,
+  Rol.AREA_MEDICA, Rol.ADMISIONES, Rol.ALMACEN, Rol.PSICOLOGIA, Rol.NUTRICION, Rol.ENFERMERIA
 ];
 
-// Crear/listar/firmar nóminas: RH (sube), Finanzas, Jefatura, Dirección y el rol legacy combinado.
+// Crear/listar/firmar nóminas: RH (sube), Finanzas, Administración, Dirección General y el rol legacy combinado.
 const rolesNomina = [
-  Rol.ADMIN_GENERAL, Rol.RRHH_FINANZAS,
+  Rol.ADMIN_GENERAL, Rol.DIRECCION_GENERAL, Rol.RRHH_FINANZAS,
   Rol.RECURSOS_HUMANOS, Rol.RECURSOS_FINANCIEROS, Rol.JEFE_ADMINISTRATIVO
 ];
 
@@ -49,7 +49,7 @@ router.get('/empleados', authorize(...rolesLideres), getEmpleados);
 router.post('/asistencias', authorize(...rolesLideres), uploadJustificante.any(), guardarAsistencias);
 router.get('/asistencias', authorize(...rolesLideres), obtenerAsistencias);
 
-// Aprobar/rechazar justificación de una incidencia: roles de supervisión/nómina.
+// Aprobar/rechazar justificación de una incidencia: jefes departamentales + RH + Dirección.
 router.patch(
   '/asistencias/:id/justificacion',
   authorize(
@@ -57,9 +57,20 @@ router.patch(
     Rol.RRHH_FINANZAS,
     Rol.RECURSOS_HUMANOS,
     Rol.JEFE_ADMINISTRATIVO,
-    Rol.JEFE_MEDICO
+    Rol.JEFE_MEDICO,
+    Rol.JEFE_CLINICO,
+    Rol.JEFE_ADMISIONES
   ),
   decidirJustificacion
+);
+
+// Justificación QUINCENAL: un solo archivo + motivo cubre todas las incidencias del empleado
+// en el rango (fechaInicio..fechaFin). Las deja en PENDIENTE para que la admin las revise.
+router.post(
+  '/asistencias/justificar-quincena',
+  authorize(...rolesLideres),
+  uploadJustificante.single('archivo'),
+  justificarQuincena
 );
 
 // ============================================================
@@ -70,8 +81,8 @@ router.patch(
 router.post('/empleados', authorize(...rolesNomina), createEmpleado);
 router.put('/empleados/:id', authorize(...rolesNomina), updateEmpleado);
 
-// Ciclos de Nómina (RH sube el archivo de CONTPAQi)
-router.post('/ciclo', authorize(...rolesNomina), uploadNominaArchivo.single('archivo'), generarNomina);
+// Ciclos de Nómina — RH crea la pre-nómina directo en el sistema (sin archivo externo).
+router.post('/ciclo', authorize(...rolesNomina), generarNomina);
 router.get('/ciclo', authorize(...rolesNomina), getNominas);
 router.get('/ciclo/:id', authorize(...rolesNomina), getNominaById); 
 
@@ -99,21 +110,11 @@ router.post(
   firmarAdministracion
 );
 
-// Jefatura Administrativa firma su paso y envía la lista quincenal de asistencias a RH.
-// El CSV se genera server-side a partir de los registros del periodo de la nómina.
-// Requiere que Administración haya firmado primero.
+// RH cierra la nómina aplicando descuentos por faltas del periodo (auto-firma).
 router.post(
-  '/ciclo/:id/asistencias-firmadas',
-  authorize(Rol.JEFE_ADMINISTRATIVO),
-  enviarAsistenciasARH
-);
-
-// RH sube la nómina final escaneada con la firma del trabajador (auto-firma).
-router.post(
-  '/ciclo/:id/nomina-final',
+  '/ciclo/:id/cerrar',
   authorize(Rol.RECURSOS_HUMANOS, Rol.RRHH_FINANZAS, Rol.ADMIN_GENERAL),
-  uploadNominaArchivo.single('archivo'),
-  subirNominaFinal
+  cerrarNomina
 );
 
 export default router;
