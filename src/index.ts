@@ -28,11 +28,7 @@ import inventarioRoutes from './routes/inventario.routes';
 import egresoRoutes from './routes/egreso.routes';
 import contraReciboRoutes from './routes/contraRecibo.routes';
 import notificacionesRoutes from './routes/notificaciones.routes';
-<<<<<<< HEAD
-//import solicitudesMedicasRoutes from './routes/solicitudesMedicas.routes';
-=======
 import solicitudesMedicasRoutes from './routes/solicitudesMedicas.routes';
->>>>>>> origin/main
 import pagosRoutes from './routes/pagos.routes';
 import proveedoresRoutes from './routes/proveedores.routes';
 import requisicionesRoutes from './routes/requisiciones.routes';
@@ -79,15 +75,10 @@ app.use(`${API}/clinica`,        clinicaRoutes);
 app.use(`${API}/inventario`,     inventarioRoutes);
 app.use(`${API}/egreso`,         egresoRoutes);
 app.use(`${API}/notificaciones`,      notificacionesRoutes);
-<<<<<<< HEAD
-//app.use(`${API}/solicitudes-medicas`, solicitudesMedicasRoutes);
-app.use(`${API}/pagos`,              pagosRoutes);
 app.use(`${API}/proveedores`,        proveedoresRoutes);
 app.use(`${API}/requisiciones`,      requisicionesRoutes);
-=======
 app.use(`${API}/solicitudes-medicas`, solicitudesMedicasRoutes);
 app.use(`${API}/pagos`,              pagosRoutes);
->>>>>>> origin/main
 
 // Health check (indicador de red local)
 app.get('/health', (_req, res) => {
