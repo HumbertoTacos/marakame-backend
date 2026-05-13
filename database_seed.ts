@@ -23,6 +23,7 @@ async function main() {
   console.log('👥 Creando usuarios por departamento...');
   const usuarios = [
     { correo: 'admin@marakame.com', nombre: 'Roberto', apellidos: 'Admin', rol: Rol.ADMIN_GENERAL },
+    { correo: 'direccion@marakame.com', nombre: 'Director', apellidos: 'General', rol: Rol.DIRECCION, esJefe: true },
     { correo: 'medico@marakame.com', nombre: 'Dra. Laura', apellidos: 'García', rol: Rol.AREA_MEDICA },
     { correo: 'enfermeria@marakame.com', nombre: 'Juan', apellidos: 'Pérez', rol: Rol.ENFERMERIA },
     { correo: 'admisiones@marakame.com', nombre: 'Ana', apellidos: 'López', rol: Rol.ADMISIONES },
@@ -42,8 +43,8 @@ async function main() {
   for (const u of usuarios) {
     await prisma.usuario.upsert({
       where: { correo: u.correo },
-      update: { passwordHash: commonPassword, rol: u.rol, activo: true },
-      create: { ...u, passwordHash: commonPassword, activo: true },
+      update: { passwordHash: commonPassword, rol: u.rol, esJefe: u.esJefe || false, activo: true },
+      create: { ...u, esJefe: u.esJefe || false, passwordHash: commonPassword, activo: true },
     });
   }
 

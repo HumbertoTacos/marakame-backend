@@ -65,6 +65,7 @@ model RegistroAsistencia {
 
 enum Rol {
   ADMIN_GENERAL
+  DIRECCION
   AREA_MEDICA
   ENFERMERIA
   NUTRICION
@@ -85,6 +86,7 @@ model Usuario {
   correo       String    @unique
   passwordHash String
   rol          Rol
+  esJefe       Boolean   @default(false)
   activo       Boolean   @default(true)
   ultimoAcceso DateTime?
   createdAt    DateTime  @default(now())

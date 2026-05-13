@@ -22,7 +22,7 @@ const refreshSchema = z.object({
 
 // ── Helpers ──────────────────────────────────────────────────
 
-function generarTokens(payload: { id: number; rol: string; nombre: string }) {
+function generarTokens(payload: { id: number; rol: string; nombre: string; esJefe: boolean }) {
   const accessToken = jwt.sign(payload, process.env.JWT_SECRET!, {
     expiresIn: (process.env.JWT_EXPIRES_IN || '8h') as any,
   });
@@ -59,6 +59,7 @@ router.post('/login', async (req, res) => {
     id: usuario.id,
     rol: usuario.rol,
     nombre: `${usuario.nombre} ${usuario.apellidos}`,
+    esJefe: usuario.esJefe,
   });
 
   res.json({
@@ -70,6 +71,7 @@ router.post('/login', async (req, res) => {
         apellidos: usuario.apellidos,
         correo: usuario.correo,
         rol: usuario.rol,
+        esJefe: usuario.esJefe,
       },
       accessToken,
       refreshToken,
@@ -85,7 +87,7 @@ router.post('/refresh', async (req, res) => {
     const payload = jwt.verify(
       refreshToken,
       process.env.JWT_REFRESH_SECRET!
-    ) as { id: number; rol: string; nombre: string };
+    ) as { id: number; rol: string; nombre: string; esJefe: boolean };
 
     const { accessToken, refreshToken: newRefresh } = generarTokens(payload);
     res.json({ success: true, data: { accessToken, refreshToken: newRefresh } });
@@ -106,6 +108,7 @@ router.get('/me', authenticate, async (req, res) => {
       apellidos: true,
       correo: true,
       rol: true,
+      esJefe: true,
       ultimoAcceso: true,
     },
   });

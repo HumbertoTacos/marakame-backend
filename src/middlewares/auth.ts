@@ -7,6 +7,7 @@ export interface JwtPayload {
   id: number;
   rol: Rol;
   nombre: string;
+  esJefe: boolean;
 }
 
 declare global {

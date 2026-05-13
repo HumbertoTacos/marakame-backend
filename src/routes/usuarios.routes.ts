@@ -16,12 +16,12 @@ const router = Router();
 router.get(
   '/personal-clinico',
   authenticate,
-  authorize(Rol.JEFE_MEDICO, Rol.ADMIN_GENERAL),
+  authorize(Rol.JEFE_MEDICO, Rol.ADMIN_GENERAL, Rol.DIRECCION),
   getPersonalClinico,
 );
 
-// El resto de endpoints solo ADMIN_GENERAL
-router.use(authenticate, authorize(Rol.ADMIN_GENERAL));
+// El resto de endpoints solo ADMIN_GENERAL y DIRECCION
+router.use(authenticate, authorize(Rol.ADMIN_GENERAL, Rol.DIRECCION));
 
 router.get('/',                     getUsuarios);
 router.post('/',                    createUsuario);

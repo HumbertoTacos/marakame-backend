@@ -15,7 +15,13 @@ export const getBitacoraLogs = async (req: Request, res: Response) => {
     if (fechaFin) whereArgs.createdAt.lte = new Date(fechaFin as string);
   }
 
-  if (req.usuario!.rol !== 'ADMIN_GENERAL') {
+  const isGlobalAdmin = req.usuario!.rol === 'ADMIN_GENERAL' || req.usuario!.rol === 'DIRECCION';
+
+  if (!isGlobalAdmin) {
+    if (!req.usuario!.esJefe) {
+      return res.status(403).json({ success: false, message: 'Acceso denegado. Se requiere nivel de jefatura.' });
+    }
+    // Si es jefe pero no global, solo ve lo de su propio departamento/rol
     whereArgs.usuario = {
       rol: req.usuario!.rol
     };
