@@ -7,8 +7,8 @@ const router = Router();
 // Todo el módulo requiere autenticación
 router.use(authenticate);
 
-// Eliminamos la restricción estricta de ADMIN_GENERAL para que cada rol vea sus propios logs
-// router.use(authorize('ADMIN_GENERAL'));
+// Auditoría — accesible para super-admin y Dirección General
+router.use(authorize('ADMIN_GENERAL', 'DIRECCION_GENERAL'));
 
 router.get('/', getBitacoraLogs);
 

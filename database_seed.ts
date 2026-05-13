@@ -22,8 +22,9 @@ async function main() {
   // 1. USUARIOS POR DEPARTAMENTO
   console.log('👥 Creando usuarios por departamento...');
   const usuarios = [
-    { correo: 'admin@marakame.com', nombre: 'Roberto', apellidos: 'Admin', rol: Rol.ADMIN_GENERAL },
-    { correo: 'direccion@marakame.com', nombre: 'Director', apellidos: 'General', rol: Rol.DIRECCION, esJefe: true },
+    { correo: 'admin@marakame.com',     nombre: 'Roberto',   apellidos: 'Admin',            rol: Rol.ADMIN_GENERAL },
+    // Dirección General — rol dedicado: solo panel ejecutivo + firma de nómina (paso 3).
+    { correo: 'direccion@marakame.com', nombre: 'Directora', apellidos: 'General Marakame', rol: Rol.DIRECCION_GENERAL },
     { correo: 'medico@marakame.com', nombre: 'Dra. Laura', apellidos: 'García', rol: Rol.AREA_MEDICA },
     { correo: 'enfermeria@marakame.com', nombre: 'Juan', apellidos: 'Pérez', rol: Rol.ENFERMERIA },
     { correo: 'admisiones@marakame.com', nombre: 'Ana', apellidos: 'López', rol: Rol.ADMISIONES },
@@ -34,13 +35,16 @@ async function main() {
     { correo: 'administracion@marakame.com', nombre: 'Administración', apellidos: 'General', rol: Rol.RRHH_FINANZAS },
     { correo: 'almacen@marakame.com', nombre: 'Pablo', apellidos: 'Logística', rol: Rol.ALMACEN },
     { correo: 'jefemedico@marakame.com', nombre: 'Dr. Carlos', apellidos: 'Ramírez', rol: Rol.JEFE_MEDICO },
+    // Jefes departamentales (operan equipos clínico/admisiones; firman justificaciones de asistencia)
+    { correo: 'jefeclinico@marakame.com',    nombre: 'Dra. Andrea',  apellidos: 'Hernández', rol: Rol.JEFE_CLINICO },
+    { correo: 'jefeadmisiones@marakame.com', nombre: 'Ricardo',      apellidos: 'Salinas',   rol: Rol.JEFE_ADMISIONES },
     // Roles dedicados del flujo de pre-nómina (separados del rol legacy RRHH_FINANZAS)
     { correo: 'rrhh@marakame.com',         nombre: 'Lucía',    apellidos: 'Vega',     rol: Rol.RECURSOS_HUMANOS },
     { correo: 'financieros@marakame.com',  nombre: 'Marco',    apellidos: 'Tesorero', rol: Rol.RECURSOS_FINANCIEROS },
     { correo: 'jefatura@marakame.com',     nombre: 'Patricia', apellidos: 'Mendoza',  rol: Rol.JEFE_ADMINISTRATIVO },
   ];
 
-  for (const u of usuarios) {
+  for (const u of (usuarios as any[])) {
     await prisma.usuario.upsert({
       where: { correo: u.correo },
       update: { passwordHash: commonPassword, rol: u.rol, esJefe: u.esJefe || false, activo: true },
