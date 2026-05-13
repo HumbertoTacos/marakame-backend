@@ -2,1044 +2,1265 @@ import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 import { AppError } from '../middlewares/errorHandler';
 import { EstadoCompra, TipoCompra } from '@prisma/client';
-import { permisosEstado } from '../utils/comprasPermissions';
-import multer from 'multer';
 import { crearNotificacion } from '../utils/notificaciones';
+import { registrarAuditoria } from '../utils/auditoria';
+import { validarTransicionCompra } from '../utils/stateMachines';
+import {
+  generateFolioCompra,
+  generateFolioOrden,
+  generateFolioOrdenPago,
+} from '../utils/folioGenerators';
+import multer from 'multer';
 
 // ============================================================
 // HELPERS
 // ============================================================
 
-const getId = (
-  value: string | string[] | undefined,
-  name = 'id'
-): number => {
-
-  const str =
-    Array.isArray(value)
-      ? value[0]
-      : value;
-
-  if (!str) {
-    throw new AppError(
-      400,
-      `${name} es requerido`
-    );
-  }
-
-  const parsed = Number(str);
-
-  if (isNaN(parsed)) {
-    throw new AppError(
-      400,
-      `${name} inválido`
-    );
-  }
-
-  return parsed;
-};
-
-const toNumber = (
-  value: any,
-  defaultValue = 0
-): number => {
-
-  const num = Number(value);
-
-  return isNaN(num)
-    ? defaultValue
-    : num;
-};
-
-const getUsuarioId = (
-  req: Request
-): number => {
-
-  if (!req.usuario) {
-    throw new AppError(
-      401,
-      'No autenticado'
-    );
-  }
-
+const getUsuarioId = (req: Request): number => {
+  if (!req.usuario) throw new AppError(401, 'No autenticado');
   return req.usuario.id;
 };
 
+const getParamId = (val: string | string[] | undefined, name = 'id'): number => {
+  const str = Array.isArray(val) ? val[0] : val;
+  const n   = parseInt(str as string, 10);
+  if (!str || isNaN(n) || n <= 0) throw new AppError(400, `${name} inválido`);
+  return n;
+};
+
 const registrarHistorial = async (
+  tx: any,
   requisicionId: number,
   estado: EstadoCompra,
-  usuarioId: number
+  usuarioId: number,
+  comentario?: string | null,
 ) => {
+  await tx.compraHistorial.create({
+    data: { requisicionId, estado, usuarioId, comentario: comentario ?? null },
+  });
+};
 
-  await prisma.compraHistorial.create({
-    data: {
-      requisicionId,
-      estado,
-      usuarioId
-    }
+const INCLUDE_COMPRA = {
+  requisicion: {
+    include: {
+      usuarioSolicita: { select: { id: true, nombre: true, apellidos: true } },
+      detalles: {
+        include: {
+          producto: { select: { id: true, codigo: true, nombre: true, unidad: true } },
+        },
+      },
+    },
+  },
+  usuario: { select: { id: true, nombre: true, apellidos: true, rol: true } },
+  proveedorSeleccionado: {
+    select: { id: true, nombre: true, rfc: true, telefono: true, correo: true },
+  },
+  cotizaciones: {
+    include: { proveedor: { select: { id: true, nombre: true } } },
+    orderBy: { precio: 'asc' as const },
+  },
+  historial: {
+    include: { usuario: { select: { nombre: true, apellidos: true } } },
+    orderBy: { fecha: 'desc' as const },
+  },
+  detalles: {
+    include: {
+      producto: { select: { id: true, codigo: true, nombre: true, unidad: true } },
+    },
+  },
+  ordenCompra: {
+    include: {
+      proveedor: { select: { id: true, nombre: true } },
+      elaboradoPor: { select: { nombre: true, apellidos: true } },
+      revisadoPor:  { select: { nombre: true, apellidos: true } },
+      autorizadoPor: { select: { nombre: true, apellidos: true } },
+    },
+  },
+  facturas: {
+    include: { proveedor: { select: { id: true, nombre: true } } },
+  },
+  ordenPago: {
+    include: {
+      elaboradoPor:  { select: { nombre: true, apellidos: true } },
+      revisadoPor:   { select: { nombre: true, apellidos: true } },
+      autorizadoPor: { select: { nombre: true, apellidos: true } },
+      detalles: {
+        include: { proveedor: { select: { id: true, nombre: true } } },
+      },
+    },
+  },
+  revisadoAdministracionPor: { select: { id: true, nombre: true, apellidos: true } },
+  usuarioAutoriza: { select: { id: true, nombre: true, apellidos: true } },
+} as const;
+
+// ============================================================
+// 1. LISTAR COMPRAS
+// ============================================================
+
+export const getCompras = async (req: Request, res: Response): Promise<void> => {
+  const { estado, tipo, proveedorId, urgente, page = '1', limit = '20' } = req.query;
+
+  const where: any = {};
+  if (estado) where.estado = estado as EstadoCompra;
+  if (tipo)   where.tipo = tipo as TipoCompra;
+  if (proveedorId) where.proveedorSeleccionadoId = parseInt(proveedorId as string, 10);
+  if (urgente === 'true') where.esUrgente = true;
+
+  const pageNum  = Math.max(1, parseInt(page as string, 10));
+  const limitNum = Math.min(100, Math.max(1, parseInt(limit as string, 10)));
+  const skip     = (pageNum - 1) * limitNum;
+
+  const [total, compras] = await Promise.all([
+    prisma.compraRequisicion.count({ where }),
+    prisma.compraRequisicion.findMany({
+      where,
+      include: INCLUDE_COMPRA,
+      orderBy: [{ esUrgente: 'desc' }, { createdAt: 'desc' }],
+      skip,
+      take: limitNum,
+    }),
+  ]);
+
+  res.json({
+    success: true,
+    data: compras,
+    meta: { total, page: pageNum, limit: limitNum, totalPages: Math.ceil(total / limitNum) },
   });
 };
 
 // ============================================================
-// FLUJO DE ESTADOS
+// 2. OBTENER COMPRA POR ID
 // ============================================================
 
-const transicionesValidas: Record<
-  EstadoCompra,
-  EstadoCompra[]
-> = {
+export const getCompraById = async (req: Request, res: Response): Promise<void> => {
+  const id = getParamId(req.params.id);
 
-  REQUISICION_CREADA: [
-    EstadoCompra.EN_REVISION_RECURSOS
-  ],
+  const compra = await prisma.compraRequisicion.findUnique({
+    where: { id },
+    include: INCLUDE_COMPRA,
+  });
 
-  EN_REVISION_RECURSOS: [
-    EstadoCompra.EN_REVISION_COMPRAS,
-    EstadoCompra.RECHAZADO
-  ],
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
 
-  // Compras captura cotizaciones (mínimo 3 → auto-avanza a COTIZACIONES_CARGADAS)
-  EN_REVISION_COMPRAS: [
-    EstadoCompra.COTIZACIONES_CARGADAS,
-    EstadoCompra.RECHAZADO
-  ],
-
-  // Administración revisa expediente y reenvía a Dirección para autorización
-  EN_REVISION_ADMINISTRACION: [
-    EstadoCompra.EN_REVISION_DIRECCION,
-    EstadoCompra.RECHAZADO
-  ],
-
-  // Dirección General autoriza o rechaza
-  EN_REVISION_DIRECCION: [
-    EstadoCompra.AUTORIZADA,
-    EstadoCompra.RECHAZADO
-  ],
-
-  COTIZACIONES_CARGADAS: [
-    EstadoCompra.PROVEEDOR_SELECCIONADO
-  ],
-
-  PROVEEDOR_SELECCIONADO: [
-    EstadoCompra.NEGOCIACION_COMPLETADA
-  ],
-
-  // Tras negociación: Compras envía expediente a Administración para revisión
-  NEGOCIACION_COMPLETADA: [
-    EstadoCompra.EN_REVISION_ADMINISTRACION,
-    EstadoCompra.RECHAZADO
-  ],
-
-  AUTORIZADA: [
-    EstadoCompra.ORDEN_GENERADA
-  ],
-
-  ORDEN_GENERADA: [
-    EstadoCompra.FACTURAS_RECIBIDAS
-  ],
-
-  FACTURAS_RECIBIDAS: [
-    EstadoCompra.ORDEN_PAGO_GENERADA
-  ],
-
-  ORDEN_PAGO_GENERADA: [
-    EstadoCompra.PAGO_GENERADO
-  ],
-
-  PAGO_GENERADO: [
-    EstadoCompra.FINALIZADO
-  ],
-
-  FINALIZADO: [],
-
-  RECHAZADO: []
+  res.json({ success: true, data: compra });
 };
 
 // ============================================================
-// CREATE REQUISICIÓN
+// 3. CREAR COMPRA DESDE REQUISICIÓN
 // ============================================================
 
-export const createRequisicion = async (
-  req: Request,
-  res: Response
-) => {
+export const createCompra = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId = getUsuarioId(req);
+  const { requisicionId, tipo, presupuestoEstimado, esUrgente, observaciones } = req.body;
 
-  const {
-    areaSolicitante,
-    descripcion,
-    justificacion,
-    presupuestoEstimado,
-    tipo,
-    detalles
-  } = req.body;
+  if (!requisicionId) throw new AppError(400, 'requisicionId es requerido');
 
-  const usuarioId =
-    getUsuarioId(req);
-
-  if (
-    !areaSolicitante ||
-    !descripcion ||
-    !justificacion
-  ) {
-    throw new AppError(
-      400,
-      'Campos obligatorios faltantes'
-    );
+  const tipoEnum = tipo as TipoCompra;
+  if (!tipoEnum || !Object.values(TipoCompra).includes(tipoEnum)) {
+    throw new AppError(400, 'tipo debe ser ORDINARIA o EXTRAORDINARIA');
   }
 
-  if (
-    !Array.isArray(detalles) ||
-    detalles.length === 0
-  ) {
-    throw new AppError(
-      400,
-      'Debes agregar al menos un detalle'
-    );
-  }
+  const reqIdNum = parseInt(String(requisicionId), 10);
+  if (isNaN(reqIdNum) || reqIdNum <= 0) throw new AppError(400, 'requisicionId inválido');
 
-  const tipoEnum =
-    Object.values(TipoCompra).includes(tipo)
-      ? tipo
-      : TipoCompra.ORDINARIA;
+  const requisicion = await prisma.requisicion.findUnique({
+    where: { id: reqIdNum },
+    include: { detalles: { include: { producto: true } } },
+  });
+  if (!requisicion) throw new AppError(404, 'Requisición no encontrada');
 
-  const folio =
-    `REQ-${Date.now()}-${usuarioId}`;
+  const existeCompra = await prisma.compraRequisicion.findUnique({
+    where: { requisicionId: reqIdNum },
+  });
+  if (existeCompra) throw new AppError(400, 'Esta requisición ya tiene una compra asociada');
 
-  const requisicion =
-    await prisma.compraRequisicion.create({
+  const presupuesto     = presupuestoEstimado ? parseFloat(presupuestoEstimado) : null;
+  const esCompraMayor   = presupuesto !== null && presupuesto > 50000;
+  const numCotizaciones = esCompraMayor ? 3 : 1;
+  const folio           = await generateFolioCompra();
 
+  const compra = await prisma.$transaction(async (tx) => {
+    const nueva = await tx.compraRequisicion.create({
       data: {
-
         folio,
-
+        requisicionId: reqIdNum,
         usuarioId,
-
-        areaSolicitante,
-
-        descripcion,
-
-        justificacion,
-
-        presupuestoEstimado:
-          toNumber(presupuestoEstimado),
-
         tipo: tipoEnum,
-
-        estado:
-          EstadoCompra.REQUISICION_CREADA,
-
+        estado: EstadoCompra.EN_COMPRAS,
+        presupuestoEstimado: presupuesto,
+        esCompraMayor,
+        numeroCotizacionesRequeridas: numCotizaciones,
+        esUrgente: esUrgente === true || esUrgente === 'true',
         detalles: {
-          create: detalles.map(
-            (
-              d: any,
-              index: number
-            ) => ({
-              numero: index + 1,
-              producto: d.producto,
-              unidad: d.unidad,
-              cantidad: toNumber(d.cantidad)
-            })
-          )
-        }
-      },
-
-      include: {
-        detalles: true
-      }
-    });
-
-  await registrarHistorial(
-    requisicion.id,
-    EstadoCompra.REQUISICION_CREADA,
-    usuarioId
-  );
-
-  await crearNotificacion({
-    titulo: 'Nueva Requisición de Compra',
-    mensaje: `El área de ${areaSolicitante} ha solicitado una nueva compra (Folio: ${folio}).`,
-    tipo: 'INFO',
-    rol: 'RRHH_FINANZAS',
-    link: '/compras'
-  });
-
-  res.status(201).json({
-    success: true,
-    data: requisicion
-  });
-};
-
-// ============================================================
-// GET REQUISICIONES
-// ============================================================
-
-export const getRequisiciones = async (
-  _req: Request,
-  res: Response
-) => {
-
-  const data =
-    await prisma.compraRequisicion.findMany({
-
-      include: {
-
-        usuario: {
-          select: {
-            nombre: true,
-            apellidos: true
-          }
+          create: requisicion.detalles
+            .filter(d => d.productoId !== null && d.producto !== null)
+            .map((d, i) => ({
+              numero:    i + 1,
+              productoId: d.productoId!,
+              unidad:    d.producto!.unidad,
+              cantidad:  d.cantidadSolicitada,
+            })),
         },
-
-        detalles: true,
-
-        cotizaciones: true,
-
-        ordenCompra: {
-          include: {
-            elaboradoPor: true,
-            revisadoPor: true,
-            autorizadoPor: true
-          }
-        },
-
-        ordenPago: {
-          include: {
-            elaboradoPor: true,
-            revisadoPor: true,
-            autorizadoPor: true,
-            detalles: true
-          }
-        },
-
-        facturas: true,
-
-        historial: true
       },
-
-      orderBy: {
-        createdAt: 'desc'
-      }
-    });
-
-  res.json({
-    success: true,
-    data
-  });
-};
-
-// ============================================================
-// UPDATE ESTADO
-// ============================================================
-
-export const updateRequisicionEstado = async (
-  req: Request,
-  res: Response
-) => {
-
-  const id =
-    getId(req.params.id);
-
-  const {
-    estado,
-    observacionesVoBo
-  } = req.body;
-
-  const usuarioId =
-    getUsuarioId(req);
-
-  const rolUsuario =
-    req.usuario?.rol;
-
-  if (!rolUsuario) {
-    throw new AppError(
-      401,
-      'No autenticado'
-    );
-  }
-
-  const requisicion =
-    await prisma.compraRequisicion.findUnique({
-      where: { id }
-    });
-
-  if (!requisicion) {
-    throw new AppError(
-      404,
-      'Requisición no encontrada'
-    );
-  }
-
-  const estadoEnum =
-    estado as EstadoCompra;
-
-  const rolesPermitidos =
-    permisosEstado[estadoEnum];
-
-  if (
-    rolesPermitidos &&
-    !rolesPermitidos.includes(rolUsuario)
-  ) {
-    throw new AppError(
-      403,
-      'No tienes permisos para esta acción'
-    );
-  }
-
-  if (
-    !Object.values(EstadoCompra)
-      .includes(estadoEnum)
-  ) {
-    throw new AppError(
-      400,
-      'Estado inválido'
-    );
-  }
-
-  if (
-    !transicionesValidas[
-      requisicion.estado
-    ].includes(estadoEnum)
-  ) {
-    throw new AppError(
-      400,
-      `No puedes cambiar de ${requisicion.estado} a ${estadoEnum}`
-    );
-  }
-
-  // ========================================================
-  // VALIDAR 3 COTIZACIONES
-  // ========================================================
-
-  if (
-    estadoEnum ===
-    EstadoCompra.PROVEEDOR_SELECCIONADO
-  ) {
-
-    const cotizaciones =
-      await prisma.compraCotizacion.count({
-        where: {
-          requisicionId: id
-        }
-      });
-
-    if (cotizaciones < 3) {
-      throw new AppError(
-        400,
-        'Debes registrar mínimo 3 cotizaciones'
-      );
-    }
-  }
-
-  const updateData: any = {
-    estado: estadoEnum
-  };
-
-  // ========================================================
-  // RECHAZO
-  // ========================================================
-
-  if (
-    estadoEnum ===
-    EstadoCompra.RECHAZADO
-  ) {
-
-    updateData.observacionesVoBo =
-      observacionesVoBo;
-
-    updateData.fechaAutorizacion =
-      new Date();
-  }
-
-  // ========================================================
-  // AUTORIZACIÓN
-  // ========================================================
-
-  if (
-    estadoEnum ===
-    EstadoCompra.AUTORIZADA
-  ) {
-
-    updateData.usuarioAutorizaId =
-      usuarioId;
-
-    updateData.fechaAutorizacion =
-      new Date();
-  }
-
-  const updated =
-    await prisma.compraRequisicion.update({
-
-      where: { id },
-
-      data: updateData,
-
-      include: {
-        cotizaciones: true,
-        ordenCompra: true,
-        ordenPago: true,
-        facturas: true
-      }
-    });
-
-  await registrarHistorial(
-    id,
-    estadoEnum,
-    usuarioId
-  );
-
-  res.json({
-    success: true,
-    data: updated
-  });
-};
-
-// ============================================================
-// COTIZACIONES
-// ============================================================
-
-export const addCotizacion = async (
-  req: Request,
-  res: Response
-) => {
-
-  const id =
-    getId(
-      req.params.requisicionId,
-      'requisicionId'
-    );
-
-  const {
-    proveedor,
-    precio,
-    tiempoEntrega
-  } = req.body;
-
-  const usuarioId =
-    getUsuarioId(req);
-
-  const rolUsuario =
-    req.usuario?.rol;
-
-  if (
-    rolUsuario !== 'ALMACEN' &&
-    rolUsuario !== 'ADMIN_GENERAL'
-  ) {
-    throw new AppError(
-      403,
-      'No tienes permisos para agregar cotizaciones'
-    );
-  }
-
-  if (!proveedor || !precio) {
-    throw new AppError(
-      400,
-      'Proveedor y precio son obligatorios'
-    );
-  }
-
-  const requisicion =
-    await prisma.compraRequisicion.findUnique({
-
-      where: { id },
-
-      include: {
-        cotizaciones: true
-      }
-    });
-
-  if (!requisicion) {
-    throw new AppError(
-      404,
-      'Requisición no encontrada'
-    );
-  }
-
-  const precioNumero =
-    toNumber(precio);
-
-  const menorActual =
-    requisicion.cotizaciones.length > 0
-      ? Math.min(
-          ...requisicion.cotizaciones.map(
-            c => Number(c.precio)
-          )
-        )
-      : null;
-
-  const nuevaEsMejor =
-    menorActual === null ||
-    precioNumero < menorActual;
-
-  if (nuevaEsMejor) {
-
-    await prisma.compraCotizacion.updateMany({
-      where: {
-        requisicionId: id,
-        esMejorOpcion: true
-      },
-
-      data: {
-        esMejorOpcion: false
-      }
-    });
-  }
-
-  const cotizacion =
-    await prisma.compraCotizacion.create({
-
-      data: {
-        requisicionId: id,
-
-        proveedor,
-
-        precio: precioNumero,
-
-        tiempoEntrega,
-
-        esMejorOpcion: nuevaEsMejor
-      }
-    });
-
-  if (
-    transicionesValidas[
-      requisicion.estado
-    ].includes(
-      EstadoCompra.COTIZACIONES_CARGADAS
-    )
-  ) {
-
-    await prisma.compraRequisicion.update({
-      where: { id },
-
-      data: {
-        estado:
-          EstadoCompra.COTIZACIONES_CARGADAS
-      }
     });
 
     await registrarHistorial(
-      id,
-      EstadoCompra.COTIZACIONES_CARGADAS,
-      usuarioId
+      tx,
+      nueva.id,
+      EstadoCompra.EN_COMPRAS,
+      usuarioId,
+      observaciones ?? 'Compra creada desde requisición',
     );
-  }
 
-  res.status(201).json({
-    success: true,
-    data: cotizacion
+    return nueva;
   });
+
+  await crearNotificacion({
+    titulo: 'Nueva Compra Registrada',
+    mensaje: `Compra ${folio} creada desde requisición ${requisicion.folio}. Requiere ${numCotizaciones} cotización(es).`,
+    tipo: 'INFO',
+    rol: 'ALMACEN',
+    link: `/compras/${compra.id}`,
+  });
+
+  await registrarAuditoria(usuarioId, 'CREAR_COMPRA', 'compras', {
+    compraId: compra.id,
+    folio,
+    requisicionId: reqIdNum,
+  });
+
+  res.status(201).json({ success: true, data: compra });
 };
 
 // ============================================================
-// GENERAR ORDEN
+// 4. REGISTRAR COTIZACIÓN
 // ============================================================
 
-export const generarOrden = async (
-  req: Request,
-  res: Response
-) => {
+export const registrarCotizacion = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId = getUsuarioId(req);
+  const id = getParamId(req.params.id, 'compraId');
+  const { proveedorId, precio, tiempoEntrega, formaPago, tipoCredito, documentoUrl } = req.body;
 
-  const id =
-    getId(
-      req.params.requisicionId,
-      'requisicionId'
-    );
+  if (!proveedorId) throw new AppError(400, 'proveedorId es requerido');
+  const precioNum = parseFloat(precio);
+  if (isNaN(precioNum) || precioNum <= 0) throw new AppError(400, 'precio debe ser mayor a 0');
 
-  const {
-    proveedor,
-    total
-  } = req.body;
-
-  const usuarioId =
-    getUsuarioId(req);
-
-  const rolUsuario =
-    req.usuario?.rol;
-
-  if (
-    rolUsuario !== 'ADMIN_GENERAL'
-  ) {
-    throw new AppError(
-      403,
-      'No tienes permisos para generar órdenes'
-    );
-  }
-
-  if (!proveedor || !total) {
-    throw new AppError(
-      400,
-      'Proveedor y total son obligatorios'
-    );
-  }
-
-  const requisicion =
-    await prisma.compraRequisicion.findUnique({
-      where: { id }
-    });
-
-  if (!requisicion) {
-    throw new AppError(
-      404,
-      'Requisición no encontrada'
-    );
-  }
-
-  if (
-    requisicion.estado !==
-    EstadoCompra.AUTORIZADA
-  ) {
-    throw new AppError(
-      400,
-      'Solo requisiciones autorizadas pueden generar orden'
-    );
-  }
-
-  const existeOrden =
-    await prisma.compraOrden.findFirst({
-      where: {
-        requisicionId: id
-      }
-    });
-
-  if (existeOrden) {
-    throw new AppError(
-      400,
-      'La requisición ya tiene una orden'
-    );
-  }
-
-  const folio =
-    `ORD-${Date.now()}-${usuarioId}`;
-
-  const orden =
-    await prisma.compraOrden.create({
-
-      data: {
-
-        requisicionId: id,
-
-        folio,
-
-        fecha: new Date(),
-
-        proveedor,
-
-        total: toNumber(total),
-
-        elaboradoPorId:
-          requisicion.usuarioId,
-
-        revisadoPorId:
-          usuarioId,
-
-        autorizadoPorId:
-          requisicion.usuarioAutorizaId
-      },
-
-      include: {
-        elaboradoPor: true,
-        revisadoPor: true,
-        autorizadoPor: true
-      }
-    });
-
-  await prisma.compraRequisicion.update({
-
+  const compra = await prisma.compraRequisicion.findUnique({
     where: { id },
+    include: { cotizaciones: true },
+  });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
 
-    data: {
-      estado:
-        EstadoCompra.ORDEN_GENERADA
+  const estadosPermitidos: EstadoCompra[] = [
+    EstadoCompra.EN_COMPRAS,
+    EstadoCompra.COTIZACIONES_CARGADAS,
+    EstadoCompra.DEVUELTA_A_COMPRAS,
+  ];
+  if (!estadosPermitidos.includes(compra.estado)) {
+    throw new AppError(400, `No se pueden agregar cotizaciones en estado ${compra.estado}`);
+  }
+
+  const provIdNum = parseInt(String(proveedorId), 10);
+  const proveedor = await prisma.proveedor.findUnique({ where: { id: provIdNum } });
+  if (!proveedor) throw new AppError(404, 'Proveedor no encontrado');
+
+  const duplicada = compra.cotizaciones.find((c) => c.proveedorId === provIdNum);
+  if (duplicada) throw new AppError(400, 'Ya existe cotización de este proveedor para esta compra');
+
+  const menorPrecio =
+    compra.cotizaciones.length > 0
+      ? Math.min(...compra.cotizaciones.map((c) => Number(c.precio)))
+      : null;
+  const esMejorOpcion = menorPrecio === null || precioNum <= menorPrecio;
+
+  const cotizacion = await prisma.$transaction(async (tx) => {
+    if (esMejorOpcion && compra.cotizaciones.length > 0) {
+      await tx.compraCotizacion.updateMany({
+        where: { requisicionId: id, esMejorOpcion: true },
+        data:  { esMejorOpcion: false },
+      });
     }
+
+    const nueva = await tx.compraCotizacion.create({
+      data: {
+        requisicionId: id,
+        proveedorId:   provIdNum,
+        precio:        precioNum,
+        tiempoEntrega: tiempoEntrega ?? null,
+        formaPago:     formaPago ?? null,
+        tipoCredito:   tipoCredito ?? null,
+        documentoUrl:  documentoUrl ?? null,
+        esMejorOpcion,
+      },
+      include: { proveedor: { select: { id: true, nombre: true } } },
+    });
+
+    const totalCotizaciones = compra.cotizaciones.length + 1;
+    const debeAvanzar =
+      totalCotizaciones >= compra.numeroCotizacionesRequeridas &&
+      (compra.estado === EstadoCompra.EN_COMPRAS ||
+       compra.estado === EstadoCompra.DEVUELTA_A_COMPRAS);
+
+    if (debeAvanzar) {
+      await tx.compraRequisicion.update({
+        where: { id },
+        data:  { estado: EstadoCompra.COTIZACIONES_CARGADAS },
+      });
+      await registrarHistorial(
+        tx,
+        id,
+        EstadoCompra.COTIZACIONES_CARGADAS,
+        usuarioId,
+        `${totalCotizaciones} cotizaciones registradas`,
+      );
+    }
+
+    return nueva;
   });
 
-  await registrarHistorial(
-    id,
-    EstadoCompra.ORDEN_GENERADA,
-    usuarioId
-  );
-
-  res.status(201).json({
-    success: true,
-    data: orden
-  });
+  res.status(201).json({ success: true, data: cotizacion });
 };
 
 // ============================================================
-// GENERAR ORDEN DE PAGO
+// 4a-bis. REGISTRAR COTIZACIONES POR PRODUCTO (BULK)
 // ============================================================
 
-export const generarOrdenPago = async (
-  req: Request,
-  res: Response
-) => {
+export const registrarCotizacionesBulk = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId = getUsuarioId(req);
+  const id        = getParamId(req.params.id, 'compraId');
+  const { items } = req.body as {
+    items: {
+      requisicionDetalleId: number;
+      proveedorId: number;
+      precioUnitario: number;
+      tiempoEntrega?: string;
+      formaPago?: string;
+    }[];
+  };
 
-  const id =
-    getId(
-      req.params.requisicionId,
-      'requisicionId'
-    );
-
-  const usuarioId =
-    getUsuarioId(req);
-
-  const rolUsuario =
-    req.usuario?.rol;
-
-  const {
-    asunto,
-    dirigidoA
-  } = req.body;
-
-  if (
-    rolUsuario !== 'RRHH_FINANZAS' &&
-    rolUsuario !== 'ADMIN_GENERAL'
-  ) {
-    throw new AppError(
-      403,
-      'No tienes permisos para generar órdenes de pago'
-    );
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new AppError(400, 'Se requiere al menos un artículo con cotización');
   }
 
-  const requisicion =
-    await prisma.compraRequisicion.findUnique({
+  const compra = await prisma.compraRequisicion.findUnique({
+    where:   { id },
+    include: { requisicion: { include: { detalles: true } } },
+  });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
 
+  const estadosPermitidos: EstadoCompra[] = [
+    EstadoCompra.EN_COMPRAS,
+    EstadoCompra.COTIZACIONES_CARGADAS,
+    EstadoCompra.DEVUELTA_A_COMPRAS,
+  ];
+  if (!estadosPermitidos.includes(compra.estado)) {
+    throw new AppError(400, `No se pueden registrar cotizaciones en estado ${compra.estado}`);
+  }
+
+  const detallesValidos = compra.requisicion?.detalles ?? [];
+  const detalleIds = new Set(detallesValidos.map(d => d.id));
+
+  for (const item of items) {
+    if (!item.requisicionDetalleId) throw new AppError(400, 'Cada artículo requiere requisicionDetalleId');
+    if (!item.proveedorId)          throw new AppError(400, 'Cada artículo requiere proveedorId');
+    const precio = parseFloat(String(item.precioUnitario));
+    if (isNaN(precio) || precio <= 0) throw new AppError(400, 'El precio unitario debe ser mayor a 0');
+    if (!detalleIds.has(Number(item.requisicionDetalleId))) {
+      throw new AppError(400, `El artículo ${item.requisicionDetalleId} no pertenece a esta requisición`);
+    }
+  }
+
+  const provIds = [...new Set(items.map(i => Number(i.proveedorId)))];
+  const provs   = await prisma.proveedor.findMany({ where: { id: { in: provIds } } });
+  if (provs.length !== provIds.length) throw new AppError(400, 'Uno o más proveedores no encontrados');
+
+  const detalleMap = Object.fromEntries(detallesValidos.map(d => [d.id, d]));
+
+  let subtotal = 0;
+  for (const item of items) {
+    const det = detalleMap[Number(item.requisicionDetalleId)];
+    subtotal += parseFloat(String(item.precioUnitario)) * (det?.cantidadSolicitada ?? 1);
+  }
+  const totalFinal = subtotal * 1.16;
+
+  const cotizaciones = await prisma.$transaction(async (tx) => {
+    await tx.compraCotizacion.deleteMany({ where: { requisicionId: id } });
+
+    const nuevas = await Promise.all(
+      items.map(item => {
+        const det      = detalleMap[Number(item.requisicionDetalleId)];
+        const unitario = parseFloat(String(item.precioUnitario));
+        return tx.compraCotizacion.create({
+          data: {
+            requisicionId:        id,
+            requisicionDetalleId: Number(item.requisicionDetalleId),
+            proveedorId:          Number(item.proveedorId),
+            precio:               unitario * (det?.cantidadSolicitada ?? 1),
+            precioUnitario:       unitario,
+            tiempoEntrega:        item.tiempoEntrega ?? null,
+            formaPago:            item.formaPago     ?? null,
+            esMejorOpcion:        true,
+          },
+          include: { proveedor: { select: { id: true, nombre: true } } },
+        });
+      })
+    );
+
+    await tx.compraRequisicion.update({
       where: { id },
-
-      include: {
-        ordenCompra: true
-      }
-    });
-
-  if (!requisicion) {
-    throw new AppError(
-      404,
-      'Requisición no encontrada'
-    );
-  }
-
-  if (
-    requisicion.estado !==
-    EstadoCompra.FACTURAS_RECIBIDAS
-  ) {
-    throw new AppError(
-      400,
-      'La requisición aún no tiene facturas'
-    );
-  }
-
-  const facturas =
-    await prisma.compraFactura.findMany({
-      where: {
-        requisicionId: id
-      }
-    });
-
-  if (facturas.length === 0) {
-    throw new AppError(
-      400,
-      'Debes subir al menos una factura'
-    );
-  }
-
-  const existeOrdenPago =
-    await prisma.compraOrdenPago.findFirst({
-      where: {
-        requisicionId: id
-      }
-    });
-
-  if (existeOrdenPago) {
-    throw new AppError(
-      400,
-      'La requisición ya tiene orden de pago'
-    );
-  }
-
-  // Distribuir monto si las facturas tienen monto=0
-  const ordenTotal =
-    Number(requisicion.ordenCompra?.total ?? requisicion.presupuestoEstimado ?? 0);
-
-  const montoPorFactura =
-    facturas.length > 0 ? ordenTotal / facturas.length : 0;
-
-  const folio =
-    `OP-${Date.now()}-${usuarioId}`;
-
-  const totalGeneral =
-    facturas.reduce(
-      (sum, f) => sum + (Number(f.monto) > 0 ? Number(f.monto) : montoPorFactura),
-      0
-    );
-
-  // Construir detalles: una fila por factura
-  const detallesData = facturas.map(f => ({
-    fechaOrdenCompra: requisicion.ordenCompra?.fecha ?? new Date(),
-    folioOrdenCompra: requisicion.ordenCompra?.folio ?? null,
-    numeroFactura:    f.numero,
-    proveedor:        requisicion.ordenCompra?.proveedor ?? requisicion.proveedorSeleccionado ?? null,
-    monto:            Number(f.monto) > 0 ? Number(f.monto) : montoPorFactura,
-  }));
-
-  const ordenPago =
-    await prisma.compraOrdenPago.create({
-
       data: {
-
-        requisicionId: id,
-
-        folio,
-
-        asunto:   asunto   || 'Envío de facturas para pago',
-        dirigidoA: dirigidoA || 'Jefe del Departamento de Administración',
-
-        totalGeneral,
-
-        observaciones: null,
-
-        elaboradoPorId:  requisicion.usuarioId,
-        revisadoPorId:   usuarioId,
-        autorizadoPorId: requisicion.usuarioAutorizaId,
-
-        detalles: {
-          create: detallesData
-        }
+        totalFinal,
+        estado: EstadoCompra.COTIZACIONES_CARGADAS,
       },
-
-      include: {
-        elaboradoPor: true,
-        revisadoPor: true,
-        autorizadoPor: true,
-        detalles: true
-      }
     });
 
-  await prisma.compraRequisicion.update({
+    await registrarHistorial(
+      tx, id, EstadoCompra.COTIZACIONES_CARGADAS, usuarioId,
+      `${items.length} cotizaciones por producto registradas`,
+    );
 
-    where: { id },
-
-    data: {
-      estado:
-        EstadoCompra.ORDEN_PAGO_GENERADA
-    }
+    return nuevas;
   });
 
-  await registrarHistorial(
-    id,
-    EstadoCompra.ORDEN_PAGO_GENERADA,
-    usuarioId
-  );
-
-  res.status(201).json({
-    success: true,
-    data: ordenPago
-  });
+  res.status(201).json({ success: true, data: cotizaciones });
 };
 
 // ============================================================
-// FACTURAS
+// 4b. ELIMINAR COTIZACIÓN
 // ============================================================
 
-const storage =
-  multer.diskStorage({
+export const eliminarCotizacion = async (req: Request, res: Response): Promise<void> => {
+  const id           = getParamId(req.params.id, 'compraId');
+  const cotizacionId = getParamId(req.params.cotizacionId, 'cotizacionId');
 
-    destination:
-      'uploads/facturas/',
+  const compra = await prisma.compraRequisicion.findUnique({
+    where: { id },
+    include: { cotizaciones: true },
+  });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
 
-    filename:
-      (_, file, cb) =>
-        cb(
-          null,
-          `${Date.now()}-${file.originalname}`
-        )
+  const estadosPermitidos: EstadoCompra[] = [
+    EstadoCompra.EN_COMPRAS,
+    EstadoCompra.COTIZACIONES_CARGADAS,
+    EstadoCompra.DEVUELTA_A_COMPRAS,
+  ];
+  if (!estadosPermitidos.includes(compra.estado)) {
+    throw new AppError(400, `No se pueden eliminar cotizaciones en estado ${compra.estado}`);
+  }
+
+  const cotizacion = compra.cotizaciones.find((c) => c.id === cotizacionId);
+  if (!cotizacion) throw new AppError(404, 'Cotización no encontrada en esta compra');
+
+  await prisma.$transaction(async (tx) => {
+    await tx.compraCotizacion.delete({ where: { id: cotizacionId } });
+
+    const restantes = compra.cotizaciones.filter((c) => c.id !== cotizacionId);
+    if (restantes.length > 0) {
+      const menorPrecio = Math.min(...restantes.map((c) => Number(c.precio)));
+      const mejorId     = restantes.find((c) => Number(c.precio) === menorPrecio)!.id;
+      await tx.compraCotizacion.updateMany({
+        where: { requisicionId: id },
+        data:  { esMejorOpcion: false },
+      });
+      await tx.compraCotizacion.update({
+        where: { id: mejorId },
+        data:  { esMejorOpcion: true },
+      });
+    }
   });
 
-export const upload =
-  multer({ storage });
+  res.status(200).json({ success: true, message: 'Cotización eliminada' });
+};
 
-export const subirFactura = async (
-  req: Request,
-  res: Response
-) => {
+// ============================================================
+// 5. SELECCIONAR PROVEEDOR GANADOR
+// ============================================================
 
-  const { requisicionId } =
-    req.params;
+export const seleccionarProveedor = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId = getUsuarioId(req);
+  const id = getParamId(req.params.id, 'compraId');
+  const { proveedorSeleccionadoId, totalFinal, formaPago, tipoCredito, observaciones } = req.body;
 
-  const file =
-    req.file;
+  if (!proveedorSeleccionadoId) throw new AppError(400, 'proveedorSeleccionadoId es requerido');
+  const totalNum = parseFloat(totalFinal);
+  if (isNaN(totalNum) || totalNum <= 0) throw new AppError(400, 'totalFinal debe ser mayor a 0');
 
-  const rolUsuario =
-    req.usuario?.rol;
-
-  if (
-    rolUsuario !== 'RRHH_FINANZAS' &&
-    rolUsuario !== 'ADMIN_GENERAL'
-  ) {
-    throw new AppError(
-      403,
-      'No tienes permisos para subir facturas'
-    );
+  const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+  if (compra.estado !== EstadoCompra.COTIZACIONES_CARGADAS) {
+    throw new AppError(400, 'Solo se puede seleccionar proveedor en estado COTIZACIONES_CARGADAS');
   }
 
-  if (!file) {
-    throw new AppError(
-      400,
-      'No se recibió archivo'
-    );
+  const provIdNum = parseInt(String(proveedorSeleccionadoId), 10);
+  const proveedor = await prisma.proveedor.findUnique({ where: { id: provIdNum } });
+  if (!proveedor) throw new AppError(404, 'Proveedor no encontrado');
+
+  const cotizacion = await prisma.compraCotizacion.findFirst({
+    where: { requisicionId: id, proveedorId: provIdNum },
+  });
+  if (!cotizacion) {
+    throw new AppError(400, 'El proveedor no tiene cotización registrada para esta compra');
   }
 
-  const requisicion =
-    await prisma.compraRequisicion.findUnique({
+  await prisma.$transaction(async (tx) => {
+    await tx.compraCotizacion.updateMany({
+      where: { requisicionId: id },
+      data:  { esMejorOpcion: false },
+    });
+    await tx.compraCotizacion.update({
+      where: { id: cotizacion.id },
+      data:  { esMejorOpcion: true },
+    });
+    await tx.compraRequisicion.update({
+      where: { id },
+      data: {
+        proveedorSeleccionadoId: provIdNum,
+        totalFinal:   totalNum,
+        formaPago:    formaPago ?? null,
+        tipoCredito:  tipoCredito ?? null,
+        observacionesVoBo: observaciones ?? null,
+      },
+    });
+    await registrarHistorial(
+      tx, id, EstadoCompra.COTIZACIONES_CARGADAS, usuarioId,
+      `Proveedor seleccionado: ${proveedor.nombre} | Total: $${totalNum}`,
+    );
+  });
 
-      where: {
-        id: parseInt(requisicionId as string)
-      }
+  const actualizada = await prisma.compraRequisicion.findUnique({
+    where: { id },
+    include: INCLUDE_COMPRA,
+  });
+  res.json({ success: true, data: actualizada });
+};
+
+// ============================================================
+// 6. ENVIAR A ADMINISTRACIÓN
+// ============================================================
+
+export const enviarAAdministracion = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId = getUsuarioId(req);
+  const id = getParamId(req.params.id, 'compraId');
+  const { observaciones } = req.body;
+
+  const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+
+  validarTransicionCompra(compra.estado, EstadoCompra.EN_REVISION_ADMINISTRACION);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.compraRequisicion.update({
+      where: { id },
+      data: {
+        estado: EstadoCompra.EN_REVISION_ADMINISTRACION,
+        revisadoAdministracionPorId: null,
+        fechaRevisionAdministracion: null,
+      },
+    });
+    await registrarHistorial(
+      tx, id, EstadoCompra.EN_REVISION_ADMINISTRACION, usuarioId,
+      observaciones ?? 'Enviado a revisión administrativa',
+    );
+  });
+
+  await crearNotificacion({
+    titulo: 'Compra en Revisión Administración',
+    mensaje: `Compra ${compra.folio} requiere revisión administrativa.`,
+    tipo: 'INFO',
+    rol: 'RRHH_FINANZAS',
+    link: `/compras/${id}`,
+  });
+
+  res.json({ success: true, message: 'Compra enviada a administración' });
+};
+
+// ============================================================
+// 7. APROBAR ADMINISTRACIÓN → EN_REVISION_DIRECCION
+// ============================================================
+
+export const aprobarAdministracion = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId   = getUsuarioId(req);
+  const rolUsuario  = req.usuario?.rol;
+  const id          = getParamId(req.params.id, 'compraId');
+  const { observaciones } = req.body;
+
+  if (rolUsuario !== 'RRHH_FINANZAS' && rolUsuario !== 'ADMIN_GENERAL' && rolUsuario !== 'JEFE_ADMINISTRATIVO') {
+    throw new AppError(403, 'Solo administración puede aprobar en esta etapa');
+  }
+
+  const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+
+  validarTransicionCompra(compra.estado, EstadoCompra.EN_REVISION_DIRECCION);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.compraRequisicion.update({
+      where: { id },
+      data: {
+        estado: EstadoCompra.EN_REVISION_DIRECCION,
+        revisadoAdministracionPorId: usuarioId,
+        fechaRevisionAdministracion: new Date(),
+      },
+    });
+    await registrarHistorial(
+      tx, id, EstadoCompra.EN_REVISION_DIRECCION, usuarioId,
+      observaciones ?? 'Aprobado por administración, enviado a dirección',
+    );
+  });
+
+  await crearNotificacion({
+    titulo: 'Compra en Revisión Dirección',
+    mensaje: `Compra ${compra.folio} requiere autorización de dirección general.`,
+    tipo: 'INFO',
+    rol: 'ADMIN_GENERAL',
+    link: `/compras/${id}`,
+  });
+
+  res.json({ success: true, message: 'Compra enviada a dirección general' });
+};
+
+// ============================================================
+// 8. DEVOLVER A COMPRAS
+// ============================================================
+
+export const devolverACompras = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId  = getUsuarioId(req);
+  const rolUsuario = req.usuario?.rol;
+  const id         = getParamId(req.params.id, 'compraId');
+  const { motivoRechazo, observaciones } = req.body;
+
+  if (rolUsuario !== 'RRHH_FINANZAS' && rolUsuario !== 'ADMIN_GENERAL' && rolUsuario !== 'JEFE_ADMINISTRATIVO') {
+    throw new AppError(403, 'Solo administración puede devolver compras');
+  }
+  if (!motivoRechazo) throw new AppError(400, 'motivoRechazo es requerido');
+
+  const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+
+  validarTransicionCompra(compra.estado, EstadoCompra.DEVUELTA_A_COMPRAS);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.compraRequisicion.update({
+      where: { id },
+      data: {
+        estado: EstadoCompra.DEVUELTA_A_COMPRAS,
+        motivoRechazo,
+        observacionesVoBo:          observaciones ?? null,
+        devueltaPorAdministracion:  true,
+        revisadoAdministracionPorId: usuarioId,
+        fechaRevisionAdministracion: new Date(),
+      },
+    });
+    await registrarHistorial(
+      tx, id, EstadoCompra.DEVUELTA_A_COMPRAS, usuarioId,
+      `Devuelta. Motivo: ${motivoRechazo}`,
+    );
+  });
+
+  await crearNotificacion({
+    titulo: 'Compra Devuelta a Compras',
+    mensaje: `Compra ${compra.folio} fue devuelta. Motivo: ${motivoRechazo}`,
+    tipo: 'ALERTA',
+    rol: 'ALMACEN',
+    link: `/compras/${id}`,
+  });
+
+  res.json({ success: true, message: 'Compra devuelta a compras' });
+};
+
+// ============================================================
+// 9. AUTORIZAR DIRECCIÓN GENERAL
+// ============================================================
+
+export const autorizarDireccion = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId  = getUsuarioId(req);
+  const rolUsuario = req.usuario?.rol;
+  const id         = getParamId(req.params.id, 'compraId');
+  const { observaciones } = req.body;
+
+  if (rolUsuario !== 'ADMIN_GENERAL') {
+    throw new AppError(403, 'Solo la dirección general puede autorizar');
+  }
+
+  const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+  if (compra.usuarioAutorizaId) throw new AppError(400, 'Esta compra ya fue autorizada');
+
+  validarTransicionCompra(compra.estado, EstadoCompra.AUTORIZADA);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.compraRequisicion.update({
+      where: { id },
+      data: {
+        estado: EstadoCompra.AUTORIZADA,
+        usuarioAutorizaId: usuarioId,
+        fechaAutorizacion: new Date(),
+      },
+    });
+    await registrarHistorial(
+      tx, id, EstadoCompra.AUTORIZADA, usuarioId,
+      observaciones ?? 'Autorizada por dirección general',
+    );
+  });
+
+  await crearNotificacion({
+    titulo: 'Compra Autorizada',
+    mensaje: `Compra ${compra.folio} fue autorizada por dirección general.`,
+    tipo: 'EXITO',
+    rol: 'ALMACEN',
+    link: `/compras/${id}`,
+  });
+
+  await registrarAuditoria(usuarioId, 'AUTORIZAR_COMPRA', 'compras', {
+    compraId: id,
+    folio: compra.folio,
+  });
+
+  res.json({ success: true, message: 'Compra autorizada por dirección' });
+};
+
+// ============================================================
+// 10. RECHAZAR DIRECCIÓN GENERAL
+// ============================================================
+
+export const rechazarDireccion = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId  = getUsuarioId(req);
+  const rolUsuario = req.usuario?.rol;
+  const id         = getParamId(req.params.id, 'compraId');
+  const { motivoRechazo } = req.body;
+
+  if (rolUsuario !== 'ADMIN_GENERAL') {
+    throw new AppError(403, 'Solo la dirección general puede rechazar');
+  }
+  if (!motivoRechazo) throw new AppError(400, 'motivoRechazo es requerido');
+
+  const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+
+  validarTransicionCompra(compra.estado, EstadoCompra.RECHAZADO);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.compraRequisicion.update({
+      where: { id },
+      data: {
+        estado: EstadoCompra.RECHAZADO,
+        motivoRechazo,
+        rechazadoPorDireccion: true,
+        fechaRechazo: new Date(),
+      },
+    });
+    await registrarHistorial(
+      tx, id, EstadoCompra.RECHAZADO, usuarioId,
+      `Rechazada por dirección. Motivo: ${motivoRechazo}`,
+    );
+  });
+
+  await crearNotificacion({
+    titulo: 'Compra Rechazada por Dirección',
+    mensaje: `Compra ${compra.folio} fue rechazada. Motivo: ${motivoRechazo}`,
+    tipo: 'ERROR',
+    rol: 'ALMACEN',
+    link: `/compras/${id}`,
+  });
+
+  await registrarAuditoria(usuarioId, 'RECHAZAR_COMPRA', 'compras', {
+    compraId: id,
+    folio: compra.folio,
+    motivoRechazo,
+  });
+
+  res.json({ success: true, message: 'Compra rechazada' });
+};
+
+// ============================================================
+// 11. GENERAR ORDEN DE COMPRA
+// ============================================================
+
+export const generarOrden = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId = getUsuarioId(req);
+  const id        = getParamId(req.params.id, 'compraId');
+
+  const compra = await prisma.compraRequisicion.findUnique({
+    where: { id },
+    include: { proveedorSeleccionado: true },
+  });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+
+  validarTransicionCompra(compra.estado, EstadoCompra.ORDEN_GENERADA);
+
+  let proveedorIdFinal = compra.proveedorSeleccionadoId;
+  if (!proveedorIdFinal) {
+    const mejorCot = await prisma.compraCotizacion.findFirst({
+      where: { requisicionId: id, esMejorOpcion: true },
+    });
+    if (!mejorCot) {
+      throw new AppError(400, 'No hay cotización marcada como mejor opción. Verifica el proceso.');
+    }
+    proveedorIdFinal = mejorCot.proveedorId;
+  }
+
+  const existeOrden = await prisma.compraOrden.findFirst({ where: { requisicionId: id } });
+  if (existeOrden) throw new AppError(400, 'Ya existe orden de compra para esta requisición');
+
+  const folio = await generateFolioOrden();
+
+  const orden = await prisma.$transaction(async (tx) => {
+    const nueva = await tx.compraOrden.create({
+      data: {
+        requisicionId:   id,
+        folio,
+        proveedorId:     proveedorIdFinal,
+        total:           compra.totalFinal ?? compra.presupuestoEstimado ?? 0,
+        elaboradoPorId:  compra.usuarioId,
+        revisadoPorId:   compra.revisadoAdministracionPorId ?? null,
+        autorizadoPorId: compra.usuarioAutorizaId ?? null,
+      },
+      include: {
+        proveedor:    { select: { id: true, nombre: true } },
+        elaboradoPor: { select: { nombre: true, apellidos: true } },
+        autorizadoPor: { select: { nombre: true, apellidos: true } },
+      },
     });
 
-  if (!requisicion) {
-    throw new AppError(
-      404,
-      'Requisición no encontrada'
+    await tx.compraRequisicion.update({
+      where: { id },
+      data: {
+        estado: EstadoCompra.ORDEN_GENERADA,
+        fechaOrdenCompra: new Date(),
+      },
+    });
+
+    await registrarHistorial(
+      tx, id, EstadoCompra.ORDEN_GENERADA, usuarioId,
+      `Orden de compra generada: ${folio}`,
     );
+
+    return nueva;
+  });
+
+  await crearNotificacion({
+    titulo: 'Orden de Compra Generada',
+    mensaje: `Orden ${folio} generada para compra ${compra.folio}.`,
+    tipo: 'INFO',
+    rol: 'ALMACEN',
+    link: `/compras/${id}`,
+  });
+
+  await registrarAuditoria(usuarioId, 'GENERAR_ORDEN', 'compras', {
+    compraId: id,
+    ordenId: orden.id,
+    folio,
+  });
+
+  res.status(201).json({ success: true, data: orden });
+};
+
+// ============================================================
+// 12. REGISTRAR FACTURA
+// ============================================================
+
+export const registrarFactura = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId = getUsuarioId(req);
+  const id        = getParamId(req.params.id, 'compraId');
+  const { numero, monto, proveedorId, documentoUrl } = req.body;
+
+  if (!numero) throw new AppError(400, 'número de factura es requerido');
+  const montoNum = parseFloat(monto);
+  if (isNaN(montoNum) || montoNum <= 0) throw new AppError(400, 'monto debe ser mayor a 0');
+
+  const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+
+  if (
+    compra.estado !== EstadoCompra.ORDEN_GENERADA &&
+    compra.estado !== EstadoCompra.FACTURAS_RECIBIDAS
+  ) {
+    throw new AppError(400, `No se pueden registrar facturas en estado ${compra.estado}`);
   }
 
-  await prisma.compraFactura.create({
+  const factura = await prisma.$transaction(async (tx) => {
+    const nueva = await tx.compraFactura.create({
+      data: {
+        requisicionId: id,
+        numero,
+        monto:         montoNum,
+        proveedorId:   proveedorId
+          ? parseInt(String(proveedorId), 10)
+          : (compra.proveedorSeleccionadoId ?? null),
+        documentoUrl: documentoUrl ?? null,
+      },
+      include: { proveedor: { select: { id: true, nombre: true } } },
+    });
 
-    data: {
+    if (compra.estado === EstadoCompra.ORDEN_GENERADA) {
+      await tx.compraRequisicion.update({
+        where: { id },
+        data: {
+          estado: EstadoCompra.FACTURAS_RECIBIDAS,
+          fechaRecepcionFacturas: new Date(),
+        },
+      });
+      await registrarHistorial(
+        tx, id, EstadoCompra.FACTURAS_RECIBIDAS, usuarioId,
+        `Factura ${numero} registrada`,
+      );
+    }
 
-      requisicionId:
-        parseInt(requisicionId as string),
+    return nueva;
+  });
 
-      numero:
-        file.originalname,
+  res.status(201).json({ success: true, data: factura });
+};
 
-      monto: 0,
+// ============================================================
+// SUBIR FACTURA (upload + registro en un paso)
+// ============================================================
 
-      documentoUrl:
-        `/uploads/facturas/${file.filename}`
+const storage = multer.diskStorage({
+  destination: 'uploads/facturas/',
+  filename: (_, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+});
+
+export const upload = multer({ storage });
+
+export const subirFactura = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId    = getUsuarioId(req);
+  const rolUsuario   = req.usuario?.rol;
+  const requisicionId = getParamId(req.params.id, 'compraId');
+  const file         = req.file;
+
+  if (rolUsuario !== 'RRHH_FINANZAS' && rolUsuario !== 'ADMIN_GENERAL') {
+    throw new AppError(403, 'No tienes permisos para subir facturas');
+  }
+  if (!file) throw new AppError(400, 'No se recibió archivo');
+
+  const compra = await prisma.compraRequisicion.findUnique({ where: { id: requisicionId } });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+
+  if (
+    compra.estado !== EstadoCompra.ORDEN_GENERADA &&
+    compra.estado !== EstadoCompra.FACTURAS_RECIBIDAS
+  ) {
+    throw new AppError(400, `No se pueden subir facturas en estado ${compra.estado}`);
+  }
+
+  const documentoUrl = `/uploads/facturas/${file.filename}`;
+
+  const { monto: montoBody, numero: numeroBody } = req.body;
+  const montoNum = parseFloat(montoBody ?? '0');
+
+  await prisma.$transaction(async (tx) => {
+    await tx.compraFactura.create({
+      data: {
+        requisicionId,
+        numero:      numeroBody ?? file.originalname,
+        monto:       montoNum,
+        proveedorId: compra.proveedorSeleccionadoId ?? null,
+        documentoUrl,
+      },
+    });
+
+    if (compra.estado === EstadoCompra.ORDEN_GENERADA) {
+      await tx.compraRequisicion.update({
+        where: { id: requisicionId },
+        data: {
+          estado: EstadoCompra.FACTURAS_RECIBIDAS,
+          fechaRecepcionFacturas: new Date(),
+        },
+      });
+      await registrarHistorial(
+        tx, requisicionId, EstadoCompra.FACTURAS_RECIBIDAS, usuarioId,
+        `Factura subida: ${file.originalname}`,
+      );
     }
   });
 
-  await prisma.compraRequisicion.update({
+  res.json({ success: true, url: documentoUrl });
+};
 
-    where: {
-      id: parseInt(requisicionId as string)
-    },
+// ============================================================
+// 13. GENERAR EXPEDIENTE
+// ============================================================
 
-    data: {
-      estado:
-        EstadoCompra.FACTURAS_RECIBIDAS
-    }
+export const generarExpediente = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId = getUsuarioId(req);
+  const id        = getParamId(req.params.id, 'compraId');
+  const { observaciones } = req.body;
+
+  const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+
+  validarTransicionCompra(compra.estado, EstadoCompra.EXPEDIENTE_GENERADO);
+
+  const numFacturas = await prisma.compraFactura.count({ where: { requisicionId: id } });
+  if (numFacturas === 0) {
+    throw new AppError(400, 'Debe registrar al menos una factura antes de generar el expediente');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.compraRequisicion.update({
+      where: { id },
+      data: {
+        estado: EstadoCompra.EXPEDIENTE_GENERADO,
+        expedienteGenerado: true,
+      },
+    });
+    await registrarHistorial(
+      tx, id, EstadoCompra.EXPEDIENTE_GENERADO, usuarioId,
+      observaciones ?? 'Expediente generado',
+    );
   });
 
-  await registrarHistorial(
-    parseInt(requisicionId as string),
+  res.json({ success: true, message: 'Expediente generado correctamente' });
+};
+
+// ============================================================
+// 14. ENVIAR A FINANZAS
+// ============================================================
+
+export const enviarAFinanzas = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId  = getUsuarioId(req);
+  const rolUsuario = req.usuario?.rol;
+  const id         = getParamId(req.params.id, 'compraId');
+  const { observaciones } = req.body;
+
+  if (rolUsuario !== 'RRHH_FINANZAS' && rolUsuario !== 'ADMIN_GENERAL') {
+    throw new AppError(403, 'Solo finanzas/administración puede enviar a finanzas');
+  }
+
+  const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+
+  validarTransicionCompra(compra.estado, EstadoCompra.ENVIADA_A_FINANZAS);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.compraRequisicion.update({
+      where: { id },
+      data: {
+        estado: EstadoCompra.ENVIADA_A_FINANZAS,
+        enviadoFinanzas: true,
+        fechaEnvioFinanzas: new Date(),
+      },
+    });
+    await registrarHistorial(
+      tx, id, EstadoCompra.ENVIADA_A_FINANZAS, usuarioId,
+      observaciones ?? 'Enviado a finanzas para pago',
+    );
+  });
+
+  await crearNotificacion({
+    titulo: 'Compra Enviada a Finanzas',
+    mensaje: `Compra ${compra.folio} ha sido enviada a finanzas para pago.`,
+    tipo: 'INFO',
+    rol: 'RRHH_FINANZAS',
+    link: `/compras/${id}`,
+  });
+
+  res.json({ success: true, message: 'Compra enviada a finanzas' });
+};
+
+// ============================================================
+// 15. GENERAR ORDEN DE PAGO
+// ============================================================
+
+export const generarOrdenPago = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId  = getUsuarioId(req);
+  const rolUsuario = req.usuario?.rol;
+  const id         = getParamId(req.params.id, 'compraId');
+  const { asunto, dirigidoA, observaciones } = req.body;
+
+  if (rolUsuario !== 'RRHH_FINANZAS' && rolUsuario !== 'ADMIN_GENERAL') {
+    throw new AppError(403, 'Solo finanzas puede generar órdenes de pago');
+  }
+
+  const compra = await prisma.compraRequisicion.findUnique({
+    where: { id },
+    include: { ordenCompra: true, facturas: true },
+  });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+
+  const estadosPermitidosOrdenPago: EstadoCompra[] = [
     EstadoCompra.FACTURAS_RECIBIDAS,
-    req.usuario!.id
-  );
+    EstadoCompra.EXPEDIENTE_GENERADO,
+    EstadoCompra.ENVIADA_A_FINANZAS,
+  ];
+  if (!estadosPermitidosOrdenPago.includes(compra.estado)) {
+    throw new AppError(400, `No se puede generar orden de pago en estado ${compra.estado}`);
+  }
+  if (compra.facturas.length === 0) {
+    throw new AppError(400, 'Debe haber al menos una factura registrada');
+  }
+
+  const existe = await prisma.compraOrdenPago.findFirst({ where: { requisicionId: id } });
+  if (existe) throw new AppError(400, 'Ya existe orden de pago para esta compra');
+
+  const folio        = await generateFolioOrdenPago();
+  const totalGeneral = compra.facturas.reduce((s, f) => s + Number(f.monto), 0);
+
+  const ordenPago = await prisma.$transaction(async (tx) => {
+    const nueva = await tx.compraOrdenPago.create({
+      data: {
+        requisicionId:  id,
+        folio,
+        asunto:         asunto    ?? 'Envío de facturas para pago',
+        dirigidoA:      dirigidoA ?? 'Jefe del Departamento de Administración',
+        totalGeneral,
+        observaciones:  observaciones ?? null,
+        elaboradoPorId: compra.usuarioId,
+        revisadoPorId:  usuarioId,
+        autorizadoPorId: compra.usuarioAutorizaId ?? null,
+        detalles: {
+          create: compra.facturas.map((f) => ({
+            fechaOrdenCompra: compra.ordenCompra?.fecha ?? new Date(),
+            folioOrdenCompra: compra.ordenCompra?.folio ?? null,
+            numeroFactura:    f.numero,
+            proveedorId:
+              f.proveedorId ?? compra.proveedorSeleccionadoId ?? null,
+            monto: Number(f.monto),
+          })),
+        },
+      },
+      include: {
+        detalles: { include: { proveedor: { select: { id: true, nombre: true } } } },
+        elaboradoPor:  { select: { nombre: true, apellidos: true } },
+        revisadoPor:   { select: { nombre: true, apellidos: true } },
+        autorizadoPor: { select: { nombre: true, apellidos: true } },
+      },
+    });
+
+    await registrarHistorial(
+      tx, id, EstadoCompra.ENVIADA_A_FINANZAS, usuarioId,
+      `Orden de pago generada: ${folio}`,
+    );
+
+    return nueva;
+  });
+
+  await registrarAuditoria(usuarioId, 'GENERAR_ORDEN_PAGO', 'compras', {
+    compraId: id,
+    ordenPagoId: ordenPago.id,
+    folio,
+  });
+
+  res.status(201).json({ success: true, data: ordenPago });
+};
+
+// ============================================================
+// 16. FINALIZAR COMPRA
+// ============================================================
+
+export const finalizarCompra = async (req: Request, res: Response): Promise<void> => {
+  const usuarioId  = getUsuarioId(req);
+  const rolUsuario = req.usuario?.rol;
+  const id         = getParamId(req.params.id, 'compraId');
+  const { observaciones } = req.body;
+
+  if (rolUsuario !== 'RRHH_FINANZAS' && rolUsuario !== 'ADMIN_GENERAL') {
+    throw new AppError(403, 'Solo finanzas/administración puede finalizar compras');
+  }
+
+  const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+
+  validarTransicionCompra(compra.estado, EstadoCompra.FINALIZADO);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.compraRequisicion.update({
+      where: { id },
+      data: { estado: EstadoCompra.FINALIZADO },
+    });
+    await registrarHistorial(
+      tx, id, EstadoCompra.FINALIZADO, usuarioId,
+      observaciones ?? 'Compra finalizada',
+    );
+  });
+
+  await crearNotificacion({
+    titulo: 'Compra Finalizada',
+    mensaje: `Compra ${compra.folio} ha sido completada exitosamente.`,
+    tipo: 'EXITO',
+    rol: 'ALMACEN',
+    link: `/compras/${id}`,
+  });
+
+  await registrarAuditoria(usuarioId, 'FINALIZAR_COMPRA', 'compras', {
+    compraId: id,
+    folio: compra.folio,
+  });
+
+  res.json({ success: true, message: 'Compra finalizada' });
+};
+
+// ============================================================
+// 17. DASHBOARD COMPRAS
+// ============================================================
+
+export const dashboardCompras = async (_req: Request, res: Response): Promise<void> => {
+  const ESTADOS_ACTIVOS = [
+    EstadoCompra.EN_COMPRAS,
+    EstadoCompra.COTIZACIONES_CARGADAS,
+    EstadoCompra.EN_REVISION_ADMINISTRACION,
+    EstadoCompra.DEVUELTA_A_COMPRAS,
+    EstadoCompra.EN_REVISION_DIRECCION,
+    EstadoCompra.AUTORIZADA,
+    EstadoCompra.ORDEN_GENERADA,
+    EstadoCompra.FACTURAS_RECIBIDAS,
+    EstadoCompra.EXPEDIENTE_GENERADO,
+    EstadoCompra.ENVIADA_A_FINANZAS,
+  ];
+
+  const [
+    pendientes,
+    autorizadas,
+    rechazadas,
+    urgentes,
+    comprasMayores,
+    porEstado,
+    gastosPorProveedor,
+    recientes,
+  ] = await Promise.all([
+    prisma.compraRequisicion.count({ where: { estado: { in: ESTADOS_ACTIVOS } } }),
+    prisma.compraRequisicion.count({ where: { estado: EstadoCompra.AUTORIZADA } }),
+    prisma.compraRequisicion.count({ where: { estado: EstadoCompra.RECHAZADO } }),
+    prisma.compraRequisicion.count({
+      where: { esUrgente: true, estado: { in: ESTADOS_ACTIVOS } },
+    }),
+    prisma.compraRequisicion.count({ where: { esCompraMayor: true } }),
+    prisma.compraRequisicion.groupBy({ by: ['estado'], _count: { id: true } }),
+    prisma.compraRequisicion.groupBy({
+      by: ['proveedorSeleccionadoId'],
+      where: {
+        proveedorSeleccionadoId: { not: null },
+        estado: EstadoCompra.FINALIZADO,
+      },
+      _sum:   { totalFinal: true },
+      _count: { id: true },
+    }),
+    prisma.compraRequisicion.findMany({
+      where:   {},
+      include: { usuario: { select: { nombre: true, apellidos: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+    }),
+  ]);
 
   res.json({
     success: true,
-    url:
-      `/uploads/facturas/${file.filename}`
+    data: {
+      resumen: { pendientes, autorizadas, rechazadas, urgentes, comprasMayores },
+      porEstado: porEstado.map((e) => ({ estado: e.estado, total: e._count.id })),
+      gastosPorProveedor: gastosPorProveedor.map((g) => ({
+        proveedorId:  g.proveedorSeleccionadoId,
+        totalGastos:  g._sum.totalFinal ?? 0,
+        numCompras:   g._count.id,
+      })),
+      recientes,
+    },
   });
 };
+
+// ============================================================
+// BACKWARD-COMPAT: getRequisiciones → alias de getCompras
+// ============================================================
+
+export const getRequisiciones = getCompras;

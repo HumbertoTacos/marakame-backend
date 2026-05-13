@@ -21,40 +21,40 @@ enum TipoAsistencia {
 }
 
 enum EstadoJustificacion {
-  NO_APLICA    
-  PENDIENTE    
-  APROBADA     
-  RECHAZADA    
+  NO_APLICA
+  PENDIENTE
+  APROBADA
+  RECHAZADA
 }
 
 model RegistroAsistencia {
-  id                     Int                 @id @default(autoincrement())
-  fecha                  DateTime            
-  tipo                   TipoAsistencia      @default(ASISTENCIA)
-  
+  id    Int            @id @default(autoincrement())
+  fecha DateTime
+  tipo  TipoAsistencia @default(ASISTENCIA)
+
   // --- DATOS DE JUSTIFICACIÓN ---
-  motivoJustificacion    String?             @db.Text
-  documentoUrl           String?             
-  estadoJustificacion    EstadoJustificacion @default(NO_APLICA)
-  
+  motivoJustificacion String?             @db.Text
+  documentoUrl        String?
+  estadoJustificacion EstadoJustificacion @default(NO_APLICA)
+
   // --- RELACIONES ---
-  empleadoId             Int
-  empleado               Empleado            @relation(fields: [empleadoId], references: [id])
-  
+  empleadoId Int
+  empleado   Empleado @relation(fields: [empleadoId], references: [id])
+
   // nominaId es opcional: la asistencia se puede registrar haya o no una nómina abierta.
   // Cuando se cierra el ciclo de nómina, las asistencias del periodo se asocian para reportes.
-  nominaId               Int?
-  nomina                 Nomina?             @relation(fields: [nominaId], references: [id])
-  
+  nominaId Int?
+  nomina   Nomina? @relation(fields: [nominaId], references: [id])
+
   // --- AUDITORÍA ---
-  registradoPorId        Int?                
-  registradoPor          Usuario?            @relation("AsistenciasRegistradas", fields: [registradoPorId], references: [id])
-  
-  revisadoPorId          Int?                
-  revisadoPor            Usuario?            @relation("AsistenciasRevisadas", fields: [revisadoPorId], references: [id])
-  
-  createdAt              DateTime            @default(now())
-  updatedAt              DateTime            @updatedAt
+  registradoPorId Int?
+  registradoPor   Usuario? @relation("AsistenciasRegistradas", fields: [registradoPorId], references: [id])
+
+  revisadoPorId Int?
+  revisadoPor   Usuario? @relation("AsistenciasRevisadas", fields: [revisadoPorId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("registros_asistencia")
 }
@@ -96,15 +96,15 @@ model Usuario {
   valoraciones       ValoracionDiagnostica[]
   bitacoraEntradas   BitacoraEntrada[]
   documentos         Documento[]
-  almacenMovimientos AlmacenMovimiento[]
-  comprasCreadas     CompraRequisicion[]
+  almacenMovimientos AlmacenMovimiento[]     @relation("MovimientoUsuario")
+  comprasCreadas     CompraRequisicion[]     @relation("CompraCreadaPor")
   nominasAutorizadas Nomina[]
   auditoria          Auditoria[]
-  historialCompras   CompraHistorial[]
+  historialCompras   CompraHistorial[]       @relation("HistorialCompraUsuario")
 
-  ordenesElaboradas  CompraOrden[]           @relation("OrdenElaborada")
-  ordenesRevisadas   CompraOrden[]           @relation("OrdenRevisada")
-  ordenesAutorizadas CompraOrden[]           @relation("OrdenAutorizada")
+  ordenesElaboradas  CompraOrden[] @relation("OrdenElaborada")
+  ordenesRevisadas   CompraOrden[] @relation("OrdenRevisada")
+  ordenesAutorizadas CompraOrden[] @relation("OrdenAutorizada")
 
   ordenesPagoElaboradas  CompraOrdenPago[] @relation("OrdenPagoElaborada")
   ordenesPagoRevisadas   CompraOrdenPago[] @relation("OrdenPagoRevisada")
@@ -120,19 +120,31 @@ model Usuario {
   planesNutricionales   PlanNutricional[]
 
   // Relaciones Financieras y Citas
-  pagosRecibidos  PagoPaciente[]
-  cargosAplicados CargoPaciente[]
-  citasAsignadas  CitaAgenda[]
-  ingresos        Ingreso[]
+  pagosRecibidos     PagoPaciente[]
+  cargosAplicados    CargoPaciente[]
+  citasAsignadas     CitaAgenda[]
+  ingresos           Ingreso[]
   egresosAutorizados EgresoRegistro[]
   notificaciones     Notificacion[]
   solicitudesMedicas SolicitudMedica[]
 
-  contraRecibosRecibidos  ContraRecibo[]
-  
+  contraRecibosRecibidos ContraRecibo[] @relation("ContraReciboRecibidoPor")
+
   // --- RELACIONES NUEVAS DE ASISTENCIA ---
-  asistenciasRegistradas  RegistroAsistencia[] @relation("AsistenciasRegistradas")
-  asistenciasRevisadas    RegistroAsistencia[] @relation("AsistenciasRevisadas")
+  asistenciasRegistradas RegistroAsistencia[] @relation("AsistenciasRegistradas")
+  asistenciasRevisadas   RegistroAsistencia[] @relation("AsistenciasRevisadas")
+
+  requisicionesSolicitadas             Requisicion[]          @relation("UsuarioSolicitaRequisicion")
+  historialRequisiciones               RequisicionHistorial[]
+  comprasAutorizadas                   CompraRequisicion[]    @relation("CompraAutorizadaPor")
+  requisicionesRevisadasAlmacen        Requisicion[]          @relation("RequisicionesRevisadasAlmacen")
+  requisicionesAutorizadas             Requisicion[]          @relation("RequisicionesAutorizadas")
+  movimientosAutorizados               AlmacenMovimiento[]    @relation("MovimientosAutorizados")
+  comprasRevisadasAdministracion       CompraRequisicion[]    @relation("ComprasRevisadasAdministracion")
+  requisicionesRevisadasAdministracion Requisicion[]          @relation("RequisicionesRevisadasAdministracion")
+
+  expedientesFinalizadosEnvio CompraExpedienteFinalizado[] @relation("ExpedientesFinalizadosEnvio")
+  expedientesFinalizadosFinalizacion CompraExpedienteFinalizado[] @relation("ExpedientesFinalizadosFinalizacion")
 
   @@map("usuarios")
 }
@@ -240,11 +252,11 @@ model Paciente {
   egresoRegistro EgresoRegistro?
 
   // Relaciones Modulo Finanzas y Agenda
-  pagos         PagoPaciente[]
-  cargos        CargoPaciente[]
-  citas         CitaAgenda[]
-  ingresos      Ingreso[]
-  evaluaciones  EvaluacionResultado[]
+  pagos        PagoPaciente[]
+  cargos       CargoPaciente[]
+  citas        CitaAgenda[]
+  ingresos     Ingreso[]
+  evaluaciones EvaluacionResultado[]
 
   @@map("pacientes")
 }
@@ -300,9 +312,9 @@ enum EstadoValoracion {
 }
 
 model Sustancia {
-  id      Int     @id @default(autoincrement())
-  nombre  String  @unique
-  activo  Boolean @default(true)
+  id     Int     @id @default(autoincrement())
+  nombre String  @unique
+  activo Boolean @default(true)
 
   @@map("sustancias")
 }
@@ -364,10 +376,10 @@ model PrimerContacto {
   sintomasReportados String? @db.Text
 
   // Timestamps, Estado y Relaciones
-  activo     Boolean   @default(true)
-  createdAt  DateTime  @default(now())
-  paciente   Paciente  @relation(fields: [pacienteId], references: [id])
-  usuario    Usuario   @relation(fields: [usuarioId], references: [id])
+  activo     Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  paciente   Paciente    @relation(fields: [pacienteId], references: [id])
+  usuario    Usuario     @relation(fields: [usuarioId], references: [id])
   documentos Documento[]
 
   @@map("primer_contacto")
@@ -440,7 +452,7 @@ model ValoracionMedica {
   exploracionFisicaDesc  String? @db.Text
 
   // Examen Mental y Conclusión
-  examenMental       String? @db.Text
+  examenMental         String? @db.Text
   impresionDiagnostica String? @db.Text
   pronostico           String? @db.Text
   planTratamiento      String? @db.Text
@@ -458,24 +470,24 @@ model ValoracionMedica {
 // ============================================================
 
 enum TipoEgreso {
-  ALTA_MEDICA        // Completó el tratamiento, autorizado por el médico
-  ALTA_VOLUNTARIA    // El paciente decidió retirarse antes de concluir
-  EXPULSION          // Retiro por sanción disciplinaria
-  FUGA               // Se retiró sin autorización del personal
-  TRASLADO           // Canalizado a otra institución especializada
+  ALTA_MEDICA // Completó el tratamiento, autorizado por el médico
+  ALTA_VOLUNTARIA // El paciente decidió retirarse antes de concluir
+  EXPULSION // Retiro por sanción disciplinaria
+  FUGA // Se retiró sin autorización del personal
+  TRASLADO // Canalizado a otra institución especializada
 }
 
 model EgresoRegistro {
-  id                   Int        @id @default(autoincrement())
-  pacienteId           Int        @unique
-  fechaEgreso          DateTime   @default(now())
-  tipoEgreso           TipoEgreso
-  notaMedica           String?    @db.Text
-  saldoPendiente       Float      @default(0)
+  id                     Int        @id @default(autoincrement())
+  pacienteId             Int        @unique
+  fechaEgreso            DateTime   @default(now())
+  tipoEgreso             TipoEgreso
+  notaMedica             String?    @db.Text
+  saldoPendiente         Float      @default(0)
   pertenenciasEntregadas Boolean    @default(false)
   inscritoReforzamiento  Boolean    @default(false)
-  autorizadoPorId      Int
-  createdAt            DateTime   @default(now())
+  autorizadoPorId        Int
+  createdAt              DateTime   @default(now())
 
   paciente      Paciente @relation(fields: [pacienteId], references: [id])
   autorizadoPor Usuario  @relation(fields: [autorizadoPorId], references: [id])
@@ -918,18 +930,150 @@ model CargoPaciente {
   @@map("cargos_paciente")
 }
 
+enum TipoProveedor {
+  MEDICAMENTOS
+  PAPELERIA
+  LIMPIEZA
+  ALIMENTOS
+  SERVICIOS
+  OTRO
+}
+
+enum EstadoProveedor {
+  ACTIVO
+  INACTIVO
+  BLOQUEADO
+}
+
+enum GiroProveedor {
+  TECNOLOGIA
+  PAPELERIA
+  REFACCIONES
+  SERVICIOS
+  LIMPIEZA
+  ALIMENTOS
+  MEDICAMENTOS
+  OTROS
+}
+
+enum TipoPersonaProveedor {
+  FISICA
+  MORAL
+}
+
+enum CondicionesPagoProveedor {
+  CONTADO
+  CREDITO_15
+  CREDITO_30
+}
+
+enum MonedaProveedor {
+  MXN
+  USD
+  EUR
+}
+
+model Proveedor {
+  id Int @id @default(autoincrement())
+
+  // ─── DATOS GENERALES ────────────────────────────────────────
+  nombre              String               @unique
+  razonSocial         String?
+  rfc                 String?              @unique
+  curp                String?
+  tipo                TipoProveedor?
+  giro                GiroProveedor?
+  tipoPersona         TipoPersonaProveedor?
+  estadoProveedor     EstadoProveedor      @default(ACTIVO)
+  activo              Boolean              @default(true)
+
+  // ─── CONTACTO ────────────────────────────────────────────────
+  contactoPrincipal   String?
+  cargoContacto       String?
+  telefono            String?
+  celular             String?
+  correo              String?
+  paginaWeb           String?
+
+  // ─── DIRECCIÓN FISCAL ────────────────────────────────────────
+  pais                String?
+  estadoRepublica     String?
+  ciudad              String?
+  colonia             String?
+  calle               String?
+  numExterior         String?
+  numInterior         String?
+  codigoPostal        String?
+  referencias         String?
+  direccion           String?
+
+  // ─── INFORMACIÓN BANCARIA ─────────────────────────────────────
+  banco               String?
+  cuentaBancaria      String?
+  clabe               String?
+  metodoPago          String?
+  condicionesPago     CondicionesPagoProveedor?
+  moneda              MonedaProveedor?
+  diasCredito         Int?
+
+  // ─── INFORMACIÓN FISCAL ──────────────────────────────────────
+  regimenFiscal       String?
+  usoCFDI             String?
+  metodoFacturacion   String?
+  retencionesAplicables String?
+  constanciaFiscalUrl String?
+
+  // ─── PRODUCTOS / SERVICIOS ───────────────────────────────────
+  productosServicios  String?   @db.Text
+  marcas              String?
+  tiempoEntregaPromedio String?
+  garantias           String?
+  convenios           String?   @db.Text
+
+  // ─── DOCUMENTOS ──────────────────────────────────────────────
+  ineRepresentanteUrl     String?
+  actaConstitutivaUrl     String?
+  comprobanteDomicilioUrl String?
+  contratoUrl             String?
+  catalogoProductosUrl    String?
+
+  // ─── DATOS INTERNOS ──────────────────────────────────────────
+  calificacion        Int?
+  observaciones       String?
+  notas               String?   @db.Text
+  ultimaCompra        DateTime?
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // ─── RELACIONES ──────────────────────────────────────────────
+  comprasSeleccionadas CompraRequisicion[] @relation("ProveedorSeleccionadoCompra")
+  cotizaciones         CompraCotizacion[]
+  ordenes              CompraOrden[]
+  facturas             CompraFactura[]
+  contraRecibos        ContraRecibo[]
+  ordenesPagoDetalle   CompraOrdenPagoDetalle[]
+  expedientesFinalizados CompraExpedienteFinalizado[] @relation("ExpedientesFinalizados")
+
+  @@index([activo])
+  @@index([estadoProveedor])
+  @@index([nombre])
+  @@index([giro])
+  @@map("proveedores")
+}
+
 // ============================================================
 // EVALUACIONES PSICOMÉTRICAS
 // ============================================================
 
 model EvaluacionResultado {
-  id             Int      @id @default(autoincrement())
-  pacienteId     Int
-  usuarioId      Int
-  instrumento    String   // AUDIT, PHQ9, CAGE, ASSIST, BECK, HAMILTON, DAST, ASI
-  puntajeTotal   Float
-  interpretacion String?  @db.Text
-  observaciones  String?  @db.Text
+  id              Int      @id @default(autoincrement())
+  pacienteId      Int
+  usuarioId       Int
+  instrumento     String // AUDIT, PHQ9, CAGE, ASSIST, BECK, HAMILTON, DAST, ASI
+  puntajeTotal    Float
+  interpretacion  String?  @db.Text
+  observaciones   String?  @db.Text
   fechaAplicacion DateTime @default(now())
 
   paciente Paciente @relation(fields: [pacienteId], references: [id])
@@ -980,7 +1124,7 @@ model SolicitudMedica {
   emisorId  Int
   emisor    Usuario               @relation(fields: [emisorId], references: [id])
   contenido String                @db.Text
-  tipo      String                // REABASTECIMIENTO, MATERIAL_CURACION, REPORTE, OTRO
+  tipo      String // REABASTECIMIENTO, MATERIAL_CURACION, REPORTE, OTRO
   estado    EstadoSolicitudMedica @default(PENDIENTE)
   createdAt DateTime              @default(now())
 
@@ -1049,7 +1193,7 @@ model Cama {
 }
 
 // ============================================================
-// ALMACÉN
+// ALMACÉN Y REQUISICIONES
 // ============================================================
 
 enum CategoriaProducto {
@@ -1092,102 +1236,289 @@ enum EstadoContraRecibo {
   CANCELADO
 }
 
+enum EstadoRequisicion {
+  CREADA
+
+  EN_REVISION_ALMACEN
+
+  SURTIDA
+
+  PARCIAL
+
+  SIN_EXISTENCIA
+
+  ENVIADA_A_COMPRAS
+
+  EN_REVISION_ADMINISTRATIVA
+
+  DEVUELTA_A_COMPRAS
+
+  EN_AUTORIZACION_DIRECCION
+
+  RECHAZADA
+
+  AUTORIZADA
+
+  ORDEN_GENERADA
+
+  FACTURAS_RECIBIDAS
+
+  EXPEDIENTE_GENERADO
+
+  ENVIADA_A_FINANZAS
+
+  FINALIZADA
+}
+
 // PRODUCTOS
 
 model AlmacenProducto {
-  id            Int               @id @default(autoincrement())
-  codigo        String            @unique
-  nombre        String
-  descripcion   String?
-  categoria     CategoriaProducto
+  id Int @id @default(autoincrement())
 
-  unidad        String // piezas, cajas, litros, ml, etc.
+  codigo String @unique
 
-  stockActual   Int               @default(0)
-  stockMinimo   Int               @default(5)
+  nombre String
 
-  estadoStock   EstadoStock       @default(NORMAL)
+  descripcion String?
 
-  // Ubicación física dentro del almacén
-  ubicacion     String?
+  categoria CategoriaProducto
 
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  unidad String
 
-  movimientos   AlmacenMovimiento[]
-  lotes         AlmacenLote[]
+  stockActual Int @default(0)
 
+  stockMinimo Int @default(5)
+
+  estadoStock EstadoStock @default(NORMAL)
+
+  ubicacion String?
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  // RELACIONES
+
+  movimientos AlmacenMovimiento[]
+
+  lotes AlmacenLote[]
+
+  requisicionesDetalle RequisicionDetalle[]
+
+  compraDetalles CompraDetalle[]
+
+  @@index([estadoStock])
+  @@index([categoria])
   @@map("almacen_productos")
+}
+
+// REQUISICIONES
+
+model Requisicion {
+  id Int @id @default(autoincrement())
+
+  folio String @unique
+
+  usuarioSolicitaId Int
+
+  areaSolicitante String
+
+  estado EstadoRequisicion @default(CREADA)
+
+  descripcion String?
+
+  justificacion String
+
+  tieneExistencia Boolean?
+
+  observaciones String?
+
+  revisadoAlmacenPorId Int?
+
+  autorizadoPorId Int?
+
+  fechaRevisionAlmacen DateTime?
+
+  fechaAutorizacion DateTime?
+
+  revisadoAdministracionPorId Int?
+
+  fechaRevisionAdministracion DateTime?
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  fechaRechazo DateTime?
+
+  rechazadaPorDireccion Boolean @default(false)
+
+  // RELACIONES
+
+  usuarioSolicita           Usuario  @relation("UsuarioSolicitaRequisicion", fields: [usuarioSolicitaId], references: [id])
+  revisadoAlmacenPor        Usuario? @relation("RequisicionesRevisadasAlmacen", fields: [revisadoAlmacenPorId], references: [id])
+  autorizadoPor             Usuario? @relation("RequisicionesAutorizadas", fields: [autorizadoPorId], references: [id])
+  revisadoAdministracionPor Usuario? @relation("RequisicionesRevisadasAdministracion", fields: [revisadoAdministracionPorId], references: [id])
+
+  detalles           RequisicionDetalle[]
+  historial          RequisicionHistorial[]
+  movimientosAlmacen AlmacenMovimiento[]    @relation("MovimientoRequisicion")
+  compraRequisicion  CompraRequisicion?
+
+  @@index([estado])
+  @@index([areaSolicitante])
+  @@map("requisiciones")
+}
+
+model RequisicionDetalle {
+  id Int @id @default(autoincrement())
+
+  requisicionId Int
+
+  productoId Int?
+
+  productoNombre String?
+
+  unidadLibre String?
+
+  numero Int @default(0)
+
+  cantidadSolicitada Int
+
+  cantidadEntregada Int @default(0)
+
+  observaciones String?
+
+  // RELACIONES
+
+  requisicion  Requisicion        @relation(fields: [requisicionId], references: [id])
+  producto     AlmacenProducto?   @relation(fields: [productoId], references: [id])
+  cotizaciones CompraCotizacion[]
+
+  @@map("requisiciones_detalles")
+}
+
+model RequisicionHistorial {
+  id Int @id @default(autoincrement())
+
+  requisicionId Int
+
+  usuarioId Int
+
+  estado EstadoRequisicion
+
+  comentario String?
+
+  fecha DateTime @default(now())
+
+  // RELACIONES
+
+  requisicion Requisicion @relation(fields: [requisicionId], references: [id])
+  usuario     Usuario     @relation(fields: [usuarioId], references: [id])
+
+  @@index([requisicionId])
+  @@index([fecha])
+  @@map("requisiciones_historial")
 }
 
 // MOVIMIENTOS
 
 model AlmacenMovimiento {
-  id                         Int                 @id @default(autoincrement())
-  productoId                 Int
-  usuarioId                  Int
-  tipo                       TipoMovimiento
-  cantidad                   Int
-  requisicionId              Int?
+  id Int @id @default(autoincrement())
+
+  productoId Int
+
+  usuarioId Int
+
+  requisicionId Int?
+
+  tipo TipoMovimiento
+
+  cantidad Int
 
   // ENTRADAS
 
-  proveedor                  String?
-  numeroFactura              String?
-  importeFactura             Float?
-  facturaUrl                 String?
-  validadoFactura            Boolean            @default(false)
-  // Validaciones visuales
-  empaqueCorrecto            Boolean?
-  cantidadCorrecta           Boolean?
-  presentacionCorrecta       Boolean?
-  // Caducidad
-  fechaCaducidad             DateTime?
-  // Recepción
-  estadoRecepcion            EstadoRecepcion    @default(PENDIENTE)
-  motivoRechazo              String?
-  // Contra-recibo
-  contraReciboUrl            String?
+  proveedor String?
+
+  numeroFactura String?
+
+  importeFactura Decimal? @db.Decimal(10, 2)
+
+  facturaUrl String?
+
+  validadoFactura Boolean @default(false)
+
+  empaqueCorrecto Boolean?
+
+  cantidadCorrecta Boolean?
+
+  presentacionCorrecta Boolean?
+
+  fechaCaducidad DateTime?
+
+  estadoRecepcion EstadoRecepcion @default(PENDIENTE)
+
+  motivoRechazo String?
+
+  contraReciboUrl String?
 
   // SALIDAS
 
-  areaSolicitante            String?
-  motivo                     String?
-  nombreRecibe               String?
-  confirmadoRecibido         Boolean            @default(false)
-  estadoSalida               EstadoSalida?
-  autorizadoPorId            Int?
-  fechaEntrega               DateTime?
+  areaSolicitante String?
+
+  motivo String?
+
+  nombreRecibe String?
+
+  confirmadoRecibido Boolean @default(false)
+
+  estadoSalida EstadoSalida?
+
+  autorizadoPorId Int?
+
+  fechaEntrega DateTime?
 
   // NOTIFICACIONES
 
-  notificadoRecursos         Boolean            @default(false)
-  fechaNotificacion          DateTime?
+  notificadoRecursos Boolean @default(false)
+
+  fechaNotificacion DateTime?
 
   // GENERALES
 
-  observaciones              String?
-  createdAt                  DateTime           @default(now())
+  observaciones String?
+
+  createdAt DateTime @default(now())
 
   // RELACIONES
 
-  producto                   AlmacenProducto    @relation(fields: [productoId], references: [id])
-  usuario                    Usuario            @relation(fields: [usuarioId], references: [id])
-  contraRecibo               ContraRecibo?
+  producto      AlmacenProducto @relation(fields: [productoId], references: [id])
+  usuario       Usuario         @relation("MovimientoUsuario", fields: [usuarioId], references: [id])
+  requisicion   Requisicion?    @relation("MovimientoRequisicion", fields: [requisicionId], references: [id])
+  autorizadoPor Usuario?        @relation("MovimientosAutorizados", fields: [autorizadoPorId], references: [id])
+  contraRecibo  ContraRecibo?
 
+  @@index([tipo])
+  @@index([createdAt])
   @@map("almacen_movimientos")
 }
 
 // LOTES
 
 model AlmacenLote {
-  id                Int               @id @default(autoincrement())
-  productoId        Int
-  numeroLote        String
-  fechaCaducidad    DateTime
-  cantidad          Int
-  createdAt         DateTime          @default(now())
-  producto          AlmacenProducto   @relation(fields: [productoId], references: [id])
+  id Int @id @default(autoincrement())
+
+  productoId Int
+
+  numeroLote String
+
+  fechaCaducidad DateTime
+
+  cantidad Int
+
+  createdAt DateTime @default(now())
+
+  producto AlmacenProducto @relation(fields: [productoId], references: [id])
 
   @@map("almacen_lotes")
 }
@@ -1195,23 +1526,35 @@ model AlmacenLote {
 // CONTRA RECIBOS
 
 model ContraRecibo {
-  id                      Int                     @id @default(autoincrement())
-  folio                   String                  @unique
-  movimientoId            Int                     @unique
-  proveedor               String
-  numeroFactura           String
-  importe                 Float
-  fechaRecepcion          DateTime                @default(now())
-  fechaPagoProgramado     DateTime?
-  recibidoPorId           Int
-  estado                  EstadoContraRecibo      @default(PENDIENTE)
-  contraReciboPdfUrl      String?
-  createdAt               DateTime                @default(now())
+  id Int @id @default(autoincrement())
+
+  folio String @unique
+
+  movimientoId Int @unique
+
+  proveedorId Int
+
+  numeroFactura String
+
+  importe Decimal @db.Decimal(10, 2)
+
+  fechaRecepcion DateTime @default(now())
+
+  fechaPagoProgramado DateTime?
+
+  recibidoPorId Int
+
+  estado EstadoContraRecibo @default(PENDIENTE)
+
+  contraReciboPdfUrl String?
+
+  createdAt DateTime @default(now())
 
   // RELACIONES
 
-  movimiento              AlmacenMovimiento       @relation(fields: [movimientoId], references: [id])
-  recibidoPor             Usuario                 @relation(fields: [recibidoPorId], references: [id])
+  movimiento  AlmacenMovimiento @relation(fields: [movimientoId], references: [id])
+  proveedor   Proveedor         @relation(fields: [proveedorId], references: [id])
+  recibidoPor Usuario           @relation("ContraReciboRecibidoPor", fields: [recibidoPorId], references: [id])
 
   @@map("contra_recibos")
 }
@@ -1221,16 +1564,14 @@ model ContraRecibo {
 // ============================================================
 
 enum EstadoCompra {
-  REQUISICION_CREADA
-
-  EN_REVISION_RECURSOS
-  EN_REVISION_COMPRAS
-  EN_REVISION_ADMINISTRACION
-  EN_REVISION_DIRECCION
+  EN_COMPRAS
 
   COTIZACIONES_CARGADAS
-  PROVEEDOR_SELECCIONADO
-  NEGOCIACION_COMPLETADA
+
+  EN_REVISION_ADMINISTRACION
+  DEVUELTA_A_COMPRAS
+
+  EN_REVISION_DIRECCION
 
   AUTORIZADA
 
@@ -1238,15 +1579,22 @@ enum EstadoCompra {
 
   FACTURAS_RECIBIDAS
 
-  ORDEN_PAGO_GENERADA
+  EXPEDIENTE_GENERADO
 
-  PAGO_GENERADO
+  ENVIADA_A_FINANZAS
 
   FINALIZADO
 
   RECHAZADO
 
-  // --- ESTADOS ANTIGUOS (Para no romper registros viejos en la BD) ---
+  // ESTADOS ANTIGUOS
+  REQUISICION_CREADA
+  EN_REVISION_RECURSOS
+  EN_REVISION_COMPRAS
+  PROVEEDOR_SELECCIONADO
+  NEGOCIACION_COMPLETADA
+  ORDEN_PAGO_GENERADA
+  PAGO_GENERADO
   REQUISICION_REVISADA
   EN_REVISION_ADMIN
   EN_AUTORIZACION_DIRECCION
@@ -1258,106 +1606,178 @@ enum TipoCompra {
 }
 
 model CompraRequisicion {
-  id        Int    @id @default(autoincrement())
-  folio     String @unique
+  id Int @id @default(autoincrement())
+
+  folio String @unique
+
+  requisicionId Int @unique
+
   usuarioId Int
 
-  tipo   TipoCompra
-  estado EstadoCompra @default(REQUISICION_CREADA)
+  tipo TipoCompra
 
-  areaSolicitante     String
-  descripcion         String
-  justificacion       String
-  presupuestoEstimado Float?
-  totalFinal          Float?
+  fechaRechazo DateTime?
+
+  rechazadoPorDireccion Boolean @default(false)
+
+  estado EstadoCompra @default(EN_COMPRAS)
+
+  presupuestoEstimado Decimal? @db.Decimal(10, 2)
+
+  totalFinal Decimal? @db.Decimal(10, 2)
 
   esCompraMayor Boolean @default(false)
 
-  proveedorSeleccionado String?
-  formaPago             String?
-  tipoCredito           String?
+  numeroCotizacionesRequeridas Int @default(1)
+
+  expedienteGenerado Boolean @default(false)
+
+  enviadoFinanzas Boolean @default(false)
+
+  esUrgente Boolean @default(false)
+
+  proveedorSeleccionadoId Int?
+
+  formaPago String?
+
+  tipoCredito String?
 
   usuarioAutorizaId Int?
 
   observacionesVoBo String?
+
+  motivoRechazo String?
+
+  devueltaPorAdministracion Boolean @default(false)
+
+  fechaRecepcionCompras DateTime?
+
+  fechaRevisionAdministracion DateTime?
+
+  fechaEnvioDireccion DateTime?
+
+  fechaRecepcionDireccion DateTime?
+
   fechaAutorizacion DateTime?
 
+  fechaOrdenCompra DateTime?
+
+  fechaRecepcionFacturas DateTime?
+
+  fechaEnvioFinanzas DateTime?
+
   createdAt DateTime @default(now())
+
   updatedAt DateTime @updatedAt
 
-  usuario Usuario @relation(fields: [usuarioId], references: [id])
+  revisadoAdministracionPorId Int?
+
+  // RELACIONES
+
+  revisadoAdministracionPor Usuario?    @relation("ComprasRevisadasAdministracion", fields: [revisadoAdministracionPorId], references: [id])
+  proveedorSeleccionado     Proveedor?  @relation("ProveedorSeleccionadoCompra", fields: [proveedorSeleccionadoId], references: [id])
+  requisicion               Requisicion @relation(fields: [requisicionId], references: [id])
+  usuario                   Usuario     @relation("CompraCreadaPor", fields: [usuarioId], references: [id])
+  usuarioAutoriza           Usuario?    @relation("CompraAutorizadaPor", fields: [usuarioAutorizaId], references: [id])
 
   cotizaciones CompraCotizacion[]
   ordenCompra  CompraOrden?
   facturas     CompraFactura[]
   pago         CompraPago?
+  ordenPago    CompraOrdenPago?
+  detalles     CompraDetalle[]
+  historial    CompraHistorial[]
+  expedientesFinalizados CompraExpedienteFinalizado[]
 
-  ordenPago CompraOrdenPago?
-
-  detalles  CompraDetalle[]
-  historial CompraHistorial[]
-
+  @@index([estado])
   @@map("compras_requisiciones")
 }
 
 model CompraCotizacion {
-  id            Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
+
   requisicionId Int
-  proveedor     String
-  precio        Float
+
+  requisicionDetalleId Int?
+
+  proveedorId Int
+
+  precio         Decimal  @db.Decimal(10, 2)
+  precioUnitario Decimal? @db.Decimal(10, 2)
+
   tiempoEntrega String?
-  esMejorOpcion Boolean  @default(false)
-  formaPago     String?
-  tipoCredito   String?
-  documentoUrl  String?
-  createdAt     DateTime @default(now())
 
-  requisicion CompraRequisicion @relation(fields: [requisicionId], references: [id])
+  esMejorOpcion Boolean @default(false)
 
+  formaPago String?
+
+  tipoCredito String?
+
+  documentoUrl String?
+
+  createdAt DateTime @default(now())
+
+  requisicion        CompraRequisicion   @relation(fields: [requisicionId], references: [id])
+  requisicionDetalle RequisicionDetalle? @relation(fields: [requisicionDetalleId], references: [id])
+  proveedor          Proveedor           @relation(fields: [proveedorId], references: [id])
+
+  @@index([requisicionId])
+  @@index([proveedorId])
+  @@index([requisicionDetalleId])
   @@map("compras_cotizaciones")
 }
 
 model CompraOrden {
-  id Int @id @default(autoincrement())
-
-  requisicionId Int               @unique
-  requisicion   CompraRequisicion @relation(fields: [requisicionId], references: [id])
-
-  folio String
-  fecha DateTime @default(now())
-
-  proveedor String
-  total     Float
-
+  id              Int      @id @default(autoincrement())
+  requisicionId   Int      @unique
+  folio           String   @unique
+  fecha           DateTime @default(now())
+  proveedorId     Int
+  total           Decimal  @db.Decimal(10, 2)
   elaboradoPorId  Int?
   revisadoPorId   Int?
   autorizadoPorId Int?
+  createdAt       DateTime @default(now())
 
-  elaboradoPor  Usuario? @relation("OrdenElaborada", fields: [elaboradoPorId], references: [id])
-  revisadoPor   Usuario? @relation("OrdenRevisada", fields: [revisadoPorId], references: [id])
-  autorizadoPor Usuario? @relation("OrdenAutorizada", fields: [autorizadoPorId], references: [id])
+  requisicion   CompraRequisicion @relation(fields: [requisicionId], references: [id])
+  elaboradoPor  Usuario?          @relation("OrdenElaborada", fields: [elaboradoPorId], references: [id])
+  revisadoPor   Usuario?          @relation("OrdenRevisada", fields: [revisadoPorId], references: [id])
+  proveedor     Proveedor         @relation(fields: [proveedorId], references: [id])
+  autorizadoPor Usuario?          @relation("OrdenAutorizada", fields: [autorizadoPorId], references: [id])
 
-  createdAt DateTime @default(now())
+  @@map("compras_ordenes")
 }
 
 model CompraFactura {
-  id            Int      @id @default(autoincrement())
+  id Int @id @default(autoincrement())
+
   requisicionId Int
-  numero        String
-  monto         Float
-  documentoUrl  String?
-  createdAt     DateTime @default(now())
+
+  numero String
+
+  monto Decimal @db.Decimal(10, 2)
+
+  documentoUrl String?
+
+  proveedorId Int?
+
+  createdAt DateTime @default(now())
 
   requisicion CompraRequisicion @relation(fields: [requisicionId], references: [id])
+  proveedor   Proveedor?        @relation(fields: [proveedorId], references: [id])
 
+  @@index([requisicionId])
   @@map("compras_facturas")
 }
 
 model CompraPago {
-  id            Int      @id @default(autoincrement())
-  requisicionId Int      @unique
-  total         Float
-  fecha         DateTime @default(now())
+  id Int @id @default(autoincrement())
+
+  requisicionId Int @unique
+
+  total Decimal @db.Decimal(10, 2)
+
+  fecha DateTime @default(now())
 
   requisicion CompraRequisicion @relation(fields: [requisicionId], references: [id])
 
@@ -1369,26 +1789,29 @@ model CompraOrdenPago {
 
   requisicionId Int @unique
 
-  folio String
+  folio String @unique
 
   fecha DateTime @default(now())
 
-  asunto      String?
-  dirigidoA   String?
-  totalGeneral Float?
+  asunto String?
+
+  dirigidoA String?
+
+  totalGeneral Decimal? @db.Decimal(10, 2)
 
   observaciones String?
 
   elaboradoPorId Int?
+
   revisadoPorId Int?
+
   autorizadoPorId Int?
 
-  elaboradoPor Usuario? @relation("OrdenPagoElaborada", fields: [elaboradoPorId], references: [id])
-  revisadoPor Usuario? @relation("OrdenPagoRevisada", fields: [revisadoPorId], references: [id])
-  autorizadoPor Usuario? @relation("OrdenPagoAutorizada", fields: [autorizadoPorId], references: [id])
-
-  requisicion CompraRequisicion @relation(fields: [requisicionId], references: [id])
-  detalles    CompraOrdenPagoDetalle[]
+  elaboradoPor  Usuario?                 @relation("OrdenPagoElaborada", fields: [elaboradoPorId], references: [id])
+  revisadoPor   Usuario?                 @relation("OrdenPagoRevisada", fields: [revisadoPorId], references: [id])
+  autorizadoPor Usuario?                 @relation("OrdenPagoAutorizada", fields: [autorizadoPorId], references: [id])
+  requisicion   CompraRequisicion        @relation(fields: [requisicionId], references: [id])
+  detalles      CompraOrdenPagoDetalle[]
 
   createdAt DateTime @default(now())
 
@@ -1398,42 +1821,100 @@ model CompraOrdenPago {
 model CompraOrdenPagoDetalle {
   id Int @id @default(autoincrement())
 
-  ordenPagoId      Int
+  ordenPagoId Int
+
   fechaOrdenCompra DateTime?
+
   folioOrdenCompra String?
-  numeroFactura    String?
-  proveedor        String?
-  monto            Float @default(0)
+
+  numeroFactura String?
+
+  proveedorId Int?
+
+  monto Decimal @db.Decimal(10, 2)
 
   ordenPago CompraOrdenPago @relation(fields: [ordenPagoId], references: [id])
+  proveedor Proveedor?      @relation(fields: [proveedorId], references: [id])
 
   @@map("compras_ordenes_pago_detalles")
 }
 
 model CompraDetalle {
-  id            Int    @id @default(autoincrement())
+  id Int @id @default(autoincrement())
+
   requisicionId Int
-  numero        Int
-  producto      String
-  unidad        String
-  cantidad      Int
+
+  productoId Int
+
+  numero Int
+
+  unidad String
+
+  cantidad Int
 
   requisicion CompraRequisicion @relation(fields: [requisicionId], references: [id])
+  producto    AlmacenProducto   @relation(fields: [productoId], references: [id])
 
+  @@index([requisicionId])
+  @@index([productoId])
   @@map("compras_detalles")
 }
 
 model CompraHistorial {
-  id            Int          @id @default(autoincrement())
+  id Int @id @default(autoincrement())
+
   requisicionId Int
-  estado        EstadoCompra
-  fecha         DateTime     @default(now())
-  usuarioId     Int
+
+  estado EstadoCompra
+
+  fecha DateTime @default(now())
+
+  usuarioId Int
+
+  comentario String?
 
   requisicion CompraRequisicion @relation(fields: [requisicionId], references: [id])
-  usuario     Usuario           @relation(fields: [usuarioId], references: [id])
+  usuario     Usuario           @relation("HistorialCompraUsuario", fields: [usuarioId], references: [id])
 
+  @@index([requisicionId])
+  @@index([fecha])
   @@map("compras_historial")
+}
+
+model CompraExpedienteFinalizado {
+  id Int @id @default(autoincrement())
+
+  folio String @unique
+
+  requisicionId Int
+
+  proveedorId Int
+
+  estado EstadoCompra @default(FINALIZADO)
+
+  totalFinal Decimal? @db.Decimal(10, 2)
+
+  usuarioIdEnvio Int?
+
+  usuarioIdFinalizacion Int?
+
+  fechaEnvioFinanzas DateTime?
+
+  fechaFinalizacion DateTime?
+
+  createdAt DateTime @default(now())
+
+  updatedAt DateTime @updatedAt
+
+  requisicion CompraRequisicion @relation(fields: [requisicionId], references: [id])
+  proveedor   Proveedor         @relation("ExpedientesFinalizados", fields: [proveedorId], references: [id])
+  usuarioEnvio Usuario?          @relation("ExpedientesFinalizadosEnvio", fields: [usuarioIdEnvio], references: [id])
+  usuarioFinalizacion Usuario?   @relation("ExpedientesFinalizadosFinalizacion", fields: [usuarioIdFinalizacion], references: [id])
+
+  @@index([requisicionId])
+  @@index([estado])
+  @@index([fechaFinalizacion])
+  @@map("compras_expedientes_finalizados")
 }
 
 // ============================================================
@@ -1530,7 +2011,7 @@ model Nomina {
   createdAt              DateTime     @default(now())
   updatedAt              DateTime     @updatedAt
 
-  usuarioAutoriza     Usuario?              @relation(fields: [usuarioAutorizaId], references: [id])
+  usuarioAutoriza     Usuario?             @relation(fields: [usuarioAutorizaId], references: [id])
   prenominas          PreNomina[]
   registrosAsistencia RegistroAsistencia[] // <--- SE AGREGÓ LA RELACIÓN FALTANTE
 
@@ -1616,19 +2097,19 @@ enum TipoNotificacion {
 }
 
 model Notificacion {
-  id        Int              @id @default(autoincrement())
-  titulo    String
-  mensaje   String           @db.Text
-  tipo      TipoNotificacion @default(INFO)
-  leida     Boolean          @default(false)
-  link      String?
-  
+  id      Int              @id @default(autoincrement())
+  titulo  String
+  mensaje String           @db.Text
+  tipo    TipoNotificacion @default(INFO)
+  leida   Boolean          @default(false)
+  link    String?
+
   usuarioId Int?
   rol       Rol?
-  
+
   createdAt DateTime @default(now())
 
-  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
+  usuario Usuario? @relation(fields: [usuarioId], references: [id])
 
   @@map("notificaciones")
 }
