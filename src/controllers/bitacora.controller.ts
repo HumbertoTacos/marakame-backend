@@ -2,17 +2,36 @@ import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 
 export const getBitacoraLogs = async (req: Request, res: Response) => {
-  const { modulo, usuarioId, fechaInicio, fechaFin } = req.query;
+  const { modulo, usuarioId, fechaInicio, fechaFin, accion, busqueda } = req.query;
 
   const whereArgs: any = {};
 
   if (modulo) whereArgs.modulo = modulo as string;
   if (usuarioId) whereArgs.usuarioId = parseInt(usuarioId as string, 10);
   
+  if (accion) {
+    whereArgs.accion = {
+      contains: accion as string
+    };
+  }
+
+  if (busqueda) {
+    whereArgs.usuario = {
+      OR: [
+        { nombre: { contains: busqueda as string } },
+        { apellidos: { contains: busqueda as string } }
+      ]
+    };
+  }
+
   if (fechaInicio || fechaFin) {
     whereArgs.createdAt = {};
     if (fechaInicio) whereArgs.createdAt.gte = new Date(fechaInicio as string);
-    if (fechaFin) whereArgs.createdAt.lte = new Date(fechaFin as string);
+    if (fechaFin) {
+      const d = new Date(fechaFin as string);
+      d.setHours(23, 59, 59, 999); // Asegurar que incluya todo el día final
+      whereArgs.createdAt.lte = d;
+    }
   }
 
   const isGlobalAdmin = req.usuario!.rol === 'ADMIN_GENERAL' || req.usuario!.rol === 'DIRECCION';
