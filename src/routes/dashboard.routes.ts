@@ -7,6 +7,6 @@ const router = Router();
 
 router.use(authenticate);
 router.get('/',          getDashboardStats);
-router.get('/directora', authorize(Rol.ADMIN_GENERAL), getDashboardDirectora);
+router.get('/directora', authorize(Rol.ADMIN_GENERAL, Rol.DIRECCION), getDashboardDirectora);
 
 export default router;
