@@ -50,7 +50,7 @@ export const createProducto = async (req: Request, res: Response) => {
       unidad: data.unidad || 'PIEZAS',
       stockMinimo: data.stockMinimo || 5,
       stockActual: 0,
-      estadoStock: 'NORMAL',
+      estadoStock: 'CRITICO',
       ubicacion: data.ubicacion || null
     }
   });
@@ -210,25 +210,12 @@ export const registerMovimiento = async (req: Request, res: Response) => {
       throw new AppError(400, 'El requisicionId proporcionado no es válido');
     }
 
-    const requisicion = await prisma.compraRequisicion.findUnique({
+    const requisicion = await prisma.requisicion.findUnique({
       where: { id: requisicionIdNum },
-      include: { detalles: true },
     });
 
     if (!requisicion) {
       throw new AppError(404, 'Requisición no encontrada');
-    }
-
-    // Verificar que el producto pertenezca a la requisición por FK
-    const perteneceARequisicion = requisicion.detalles.some(
-      (d) => d.productoId === productoIdNum
-    );
-
-    if (!perteneceARequisicion) {
-      throw new AppError(
-        400,
-        `El producto "${producto.nombre}" no está en la requisición ${requisicion.folio}`
-      );
     }
   }
 

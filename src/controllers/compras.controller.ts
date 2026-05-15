@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 import { AppError } from '../middlewares/errorHandler';
-import { EstadoCompra, TipoCompra } from '@prisma/client';
+import { EstadoCompra, EstadoRequisicion, TipoCompra } from '@prisma/client';
 import { crearNotificacion } from '../utils/notificaciones';
 import { registrarAuditoria } from '../utils/auditoria';
 import { validarTransicionCompra } from '../utils/stateMachines';
@@ -68,7 +68,7 @@ const INCLUDE_COMPRA = {
       producto: { select: { id: true, codigo: true, nombre: true, unidad: true } },
     },
   },
-  ordenCompra: {
+  ordenes: {
     include: {
       proveedor: { select: { id: true, nombre: true } },
       elaboradoPor: { select: { nombre: true, apellidos: true } },
@@ -684,7 +684,12 @@ export const autorizarDireccion = async (req: Request, res: Response): Promise<v
 
   const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
   if (!compra) throw new AppError(404, 'Compra no encontrada');
-  if (compra.usuarioAutorizaId) throw new AppError(400, 'Esta compra ya fue autorizada');
+
+  // Idempotente: si ya fue autorizada devuelve éxito en lugar de 400
+  if (compra.usuarioAutorizaId) {
+    res.json({ success: true, message: 'Compra ya estaba autorizada' });
+    return;
+  }
 
   validarTransicionCompra(compra.estado, EstadoCompra.AUTORIZADA);
 
@@ -786,41 +791,79 @@ export const generarOrden = async (req: Request, res: Response): Promise<void> =
   });
   if (!compra) throw new AppError(404, 'Compra no encontrada');
 
-  validarTransicionCompra(compra.estado, EstadoCompra.ORDEN_GENERADA);
-
-  let proveedorIdFinal = compra.proveedorSeleccionadoId;
-  if (!proveedorIdFinal) {
-    const mejorCot = await prisma.compraCotizacion.findFirst({
-      where: { requisicionId: id, esMejorOpcion: true },
-    });
-    if (!mejorCot) {
-      throw new AppError(400, 'No hay cotización marcada como mejor opción. Verifica el proceso.');
-    }
-    proveedorIdFinal = mejorCot.proveedorId;
+  // Idempotent: if orders already exist, return them as-is
+  const existingOrdenes = await prisma.compraOrden.findMany({
+    where: { requisicionId: id },
+    include: {
+      proveedor:    { select: { id: true, nombre: true } },
+      elaboradoPor: { select: { nombre: true, apellidos: true } },
+      autorizadoPor: { select: { nombre: true, apellidos: true } },
+    },
+  });
+  if (existingOrdenes.length > 0) {
+    res.json({ success: true, data: existingOrdenes });
+    return;
   }
 
-  const existeOrden = await prisma.compraOrden.findFirst({ where: { requisicionId: id } });
-  if (existeOrden) throw new AppError(400, 'Ya existe orden de compra para esta requisición');
+  validarTransicionCompra(compra.estado, EstadoCompra.ORDEN_GENERADA);
 
-  const folio = await generateFolioOrden();
+  // Group best cotizations by provider
+  const mejoresCotizaciones = await prisma.compraCotizacion.findMany({
+    where: { requisicionId: id, esMejorOpcion: true },
+  });
 
-  const orden = await prisma.$transaction(async (tx) => {
-    const nueva = await tx.compraOrden.create({
-      data: {
-        requisicionId:   id,
-        folio,
-        proveedorId:     proveedorIdFinal,
-        total:           compra.totalFinal ?? compra.presupuestoEstimado ?? 0,
-        elaboradoPorId:  compra.usuarioId,
-        revisadoPorId:   compra.revisadoAdministracionPorId ?? null,
-        autorizadoPorId: compra.usuarioAutorizaId ?? null,
-      },
-      include: {
-        proveedor:    { select: { id: true, nombre: true } },
-        elaboradoPor: { select: { nombre: true, apellidos: true } },
-        autorizadoPor: { select: { nombre: true, apellidos: true } },
-      },
-    });
+  const gruposPorProveedor = new Map<number, typeof mejoresCotizaciones>();
+  for (const cot of mejoresCotizaciones) {
+    const grupo = gruposPorProveedor.get(cot.proveedorId) ?? [];
+    grupo.push(cot);
+    gruposPorProveedor.set(cot.proveedorId, grupo);
+  }
+
+  // Fallback to proveedorSeleccionadoId when no per-product cotizations exist
+  if (gruposPorProveedor.size === 0) {
+    if (!compra.proveedorSeleccionadoId) {
+      throw new AppError(400, 'No hay cotización marcada como mejor opción. Verifica el proceso.');
+    }
+    gruposPorProveedor.set(compra.proveedorSeleccionadoId, []);
+  }
+
+  const proveedorEntries = Array.from(gruposPorProveedor.entries());
+
+  // Generate folios sequentially to avoid collisions
+  const folios: string[] = [];
+  for (let i = 0; i < proveedorEntries.length; i++) {
+    folios.push(await generateFolioOrden());
+  }
+
+  const ordenes = await prisma.$transaction(async (tx) => {
+    const nuevas = [];
+
+    for (let i = 0; i < proveedorEntries.length; i++) {
+      const [proveedorId, cots] = proveedorEntries[i];
+      const folio = folios[i];
+
+      const totalProveedor = cots.length > 0
+        ? cots.reduce((sum, c) => sum + Number(c.precio), 0)
+        : Number(compra.totalFinal ?? compra.presupuestoEstimado ?? 0);
+
+      const nueva = await tx.compraOrden.create({
+        data: {
+          requisicionId:   id,
+          folio,
+          proveedorId,
+          total:           totalProveedor,
+          elaboradoPorId:  compra.usuarioId,
+          revisadoPorId:   compra.revisadoAdministracionPorId ?? null,
+          autorizadoPorId: compra.usuarioAutorizaId ?? null,
+        },
+        include: {
+          proveedor:    { select: { id: true, nombre: true } },
+          elaboradoPor: { select: { nombre: true, apellidos: true } },
+          autorizadoPor: { select: { nombre: true, apellidos: true } },
+        },
+      });
+      nuevas.push(nueva);
+    }
 
     await tx.compraRequisicion.update({
       where: { id },
@@ -830,17 +873,19 @@ export const generarOrden = async (req: Request, res: Response): Promise<void> =
       },
     });
 
+    const foliosList = folios.join(', ');
     await registrarHistorial(
       tx, id, EstadoCompra.ORDEN_GENERADA, usuarioId,
-      `Orden de compra generada: ${folio}`,
+      `Órdenes de compra generadas: ${foliosList}`,
     );
 
-    return nueva;
+    return nuevas;
   });
 
+  const foliosList = folios.join(', ');
   await crearNotificacion({
-    titulo: 'Orden de Compra Generada',
-    mensaje: `Orden ${folio} generada para compra ${compra.folio}.`,
+    titulo: 'Órdenes de Compra Generadas',
+    mensaje: `${ordenes.length > 1 ? 'Órdenes' : 'Orden'} ${foliosList} generada(s) para compra ${compra.folio}.`,
     tipo: 'INFO',
     rol: 'ALMACEN',
     link: `/compras/${id}`,
@@ -848,11 +893,11 @@ export const generarOrden = async (req: Request, res: Response): Promise<void> =
 
   await registrarAuditoria(usuarioId, 'GENERAR_ORDEN', 'compras', {
     compraId: id,
-    ordenId: orden.id,
-    folio,
+    ordenesCount: ordenes.length,
+    folios: foliosList,
   });
 
-  res.status(201).json({ success: true, data: orden });
+  res.status(201).json({ success: true, data: ordenes });
 };
 
 // ============================================================
@@ -1075,7 +1120,7 @@ export const generarOrdenPago = async (req: Request, res: Response): Promise<voi
 
   const compra = await prisma.compraRequisicion.findUnique({
     where: { id },
-    include: { ordenCompra: true, facturas: true },
+    include: { ordenes: true, facturas: true },
   });
   if (!compra) throw new AppError(404, 'Compra no encontrada');
 
@@ -1111,8 +1156,8 @@ export const generarOrdenPago = async (req: Request, res: Response): Promise<voi
         autorizadoPorId: compra.usuarioAutorizaId ?? null,
         detalles: {
           create: compra.facturas.map((f) => ({
-            fechaOrdenCompra: compra.ordenCompra?.fecha ?? new Date(),
-            folioOrdenCompra: compra.ordenCompra?.folio ?? null,
+            fechaOrdenCompra: compra.ordenes[0]?.fecha ?? new Date(),
+            folioOrdenCompra: compra.ordenes.map(o => o.folio).join(', ') || null,
             numeroFactura:    f.numero,
             proveedorId:
               f.proveedorId ?? compra.proveedorSeleccionadoId ?? null,
@@ -1162,12 +1207,26 @@ export const finalizarCompra = async (req: Request, res: Response): Promise<void
   const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
   if (!compra) throw new AppError(404, 'Compra no encontrada');
 
+  if (compra.estado === EstadoCompra.FINALIZADO) {
+    // Ensure Requisicion estado is also synced (covers records created before this fix)
+    await prisma.requisicion.updateMany({
+      where: { id: compra.requisicionId, estado: { not: EstadoRequisicion.FINALIZADA } },
+      data: { estado: EstadoRequisicion.FINALIZADA },
+    });
+    res.json({ success: true, message: 'Compra ya estaba finalizada' });
+    return;
+  }
+
   validarTransicionCompra(compra.estado, EstadoCompra.FINALIZADO);
 
   await prisma.$transaction(async (tx) => {
     await tx.compraRequisicion.update({
       where: { id },
       data: { estado: EstadoCompra.FINALIZADO },
+    });
+    await tx.requisicion.update({
+      where: { id: compra.requisicionId },
+      data: { estado: EstadoRequisicion.FINALIZADA },
     });
     await registrarHistorial(
       tx, id, EstadoCompra.FINALIZADO, usuarioId,

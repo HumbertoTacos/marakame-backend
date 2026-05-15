@@ -15,10 +15,11 @@ export const createRequisicion = async (req: Request, res: Response) => {
   const usuario = req.usuario;
   if (!usuario) throw new AppError(401, 'No autenticado');
 
-  const { areaSolicitante, justificacion, descripcion, detalles } = req.body as {
+  const { areaSolicitante, justificacion, descripcion, tipo, detalles } = req.body as {
     areaSolicitante?: string;
     justificacion?: string;
     descripcion?: string;
+    tipo?: 'ORDINARIA' | 'EXTRAORDINARIA';
     detalles?: DetalleInput[];
   };
 
@@ -36,6 +37,7 @@ export const createRequisicion = async (req: Request, res: Response) => {
       areaSolicitante: areaSolicitante.trim(),
       justificacion: justificacion.trim(),
       descripcion: descripcion?.trim() ?? null,
+      tipo: tipo === 'EXTRAORDINARIA' ? 'EXTRAORDINARIA' : 'ORDINARIA',
       usuarioSolicitaId: usuario.id,
       detalles: {
         create: detalles.map((d, i) => ({
@@ -141,7 +143,7 @@ export const enviarACompras = async (req: Request, res: Response) => {
         folio,
         requisicionId: id,
         usuarioId: usuario.id,
-        tipo: 'ORDINARIA',
+        tipo: requisicion.tipo,
         estado: EstadoCompra.EN_COMPRAS,
         detalles: {
           create: requisicion.detalles

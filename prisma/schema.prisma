@@ -1327,6 +1327,8 @@ model Requisicion {
 
   areaSolicitante String
 
+  tipo TipoCompra @default(ORDINARIA)
+
   estado EstadoRequisicion @default(CREADA)
 
   descripcion String?
@@ -1678,7 +1680,7 @@ model CompraRequisicion {
   usuarioAutoriza           Usuario?    @relation("CompraAutorizadaPor", fields: [usuarioAutorizaId], references: [id])
 
   cotizaciones CompraCotizacion[]
-  ordenCompra  CompraOrden?
+  ordenes      CompraOrden[]
   facturas     CompraFactura[]
   pago         CompraPago?
   ordenPago    CompraOrdenPago?
@@ -1726,7 +1728,7 @@ model CompraCotizacion {
 
 model CompraOrden {
   id              Int      @id @default(autoincrement())
-  requisicionId   Int      @unique
+  requisicionId   Int
   folio           String   @unique
   fecha           DateTime @default(now())
   proveedorId     Int
