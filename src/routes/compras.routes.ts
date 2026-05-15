@@ -8,6 +8,8 @@ import {
   registrarCotizacion,
   registrarCotizacionesBulk,
   eliminarCotizacion,
+  agregarCotizacionProducto,
+  seleccionarCotizacionProducto,
   seleccionarProveedor,
   enviarAAdministracion,
   aprobarAdministracion,
@@ -63,6 +65,8 @@ router.post('/', authorize(...ROLES_COMPRAS), createCompra);
 
 router.post('/:id/cotizaciones', authorize(...ROLES_COMPRAS), registrarCotizacion);
 router.post('/:id/cotizaciones-bulk', authorize(...ROLES_COMPRAS), registrarCotizacionesBulk);
+router.post('/:id/cotizacion-producto', authorize(...ROLES_COMPRAS), agregarCotizacionProducto);
+router.patch('/:id/cotizaciones/:cotizacionId/seleccionar', authorize(...ROLES_COMPRAS, ...ROLES_ADMINISTRACION), seleccionarCotizacionProducto);
 router.delete('/:id/cotizaciones/:cotizacionId', authorize(...ROLES_COMPRAS), eliminarCotizacion);
 
 // ============================================================

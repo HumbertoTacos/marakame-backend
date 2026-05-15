@@ -1538,7 +1538,9 @@ model ContraRecibo {
 
   movimientoId Int @unique
 
-  proveedorId Int
+  proveedorId Int?
+
+  proveedorNombre String?
 
   numeroFactura String
 
@@ -1559,7 +1561,7 @@ model ContraRecibo {
   // RELACIONES
 
   movimiento  AlmacenMovimiento @relation(fields: [movimientoId], references: [id])
-  proveedor   Proveedor         @relation(fields: [proveedorId], references: [id])
+  proveedor   Proveedor?        @relation(fields: [proveedorId], references: [id])
   recibidoPor Usuario           @relation("ContraReciboRecibidoPor", fields: [recibidoPorId], references: [id])
 
   @@map("contra_recibos")
@@ -1708,9 +1710,16 @@ model CompraCotizacion {
 
   esMejorOpcion Boolean @default(false)
 
-  formaPago String?
+  formaPago       String?
+  condicionesPago String?
 
   tipoCredito String?
+
+  garantia String?
+  marca    String?
+  modelo   String?
+
+  observaciones String?
 
   documentoUrl String?
 
