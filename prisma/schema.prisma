@@ -134,10 +134,14 @@ model Usuario {
   solicitudesMedicas SolicitudMedica[]
 
   contraRecibosRecibidos  ContraRecibo[]
-  
+
   // --- RELACIONES NUEVAS DE ASISTENCIA ---
   asistenciasRegistradas  RegistroAsistencia[] @relation("AsistenciasRegistradas")
   asistenciasRevisadas    RegistroAsistencia[] @relation("AsistenciasRevisadas")
+
+  // --- Recursos Financieros (Fase 1: Ingresos) ---
+  pagosValidados          PagoPaciente[]              @relation("PagosValidados")
+  facturasMensualesCreadas FacturaElectronicaMensual[] @relation("FacturasMensualesCreadas")
 
   @@map("usuarios")
 }
@@ -890,6 +894,20 @@ enum MetodoPago {
   OTRO
 }
 
+enum EstadoValidacionIngreso {
+  PENDIENTE_VALIDACION
+  VALIDADO
+  OBSERVADO
+  DEPOSITADO
+  FACTURADO
+}
+
+enum EstadoFacturaMensual {
+  BORRADOR
+  EMITIDA
+  CANCELADA
+}
+
 model PagoPaciente {
   id              Int        @id @default(autoincrement())
   pacienteId      Int
@@ -902,10 +920,48 @@ model PagoPaciente {
   facturado       Boolean    @default(false)
   createdAt       DateTime   @default(now())
 
-  paciente      Paciente @relation(fields: [pacienteId], references: [id])
-  usuarioRecibe Usuario  @relation(fields: [usuarioRecibeId], references: [id])
+  // --- Flujo Recursos Financieros (efectivo + recibo foliado) ---
+  folioRecibo      String?                 @unique
+  estadoValidacion EstadoValidacionIngreso @default(VALIDADO)
+  observaciones    String?                 @db.Text
+  validadoPorId   Int?
+  fechaValidacion DateTime?
+  numeroDeposito  String?
+  fichaDepositoUrl String?
+  fechaDeposito   DateTime?
+  facturaMensualId Int?
+
+  paciente       Paciente                  @relation(fields: [pacienteId], references: [id])
+  usuarioRecibe  Usuario                   @relation(fields: [usuarioRecibeId], references: [id])
+  validadoPor    Usuario?                  @relation("PagosValidados", fields: [validadoPorId], references: [id])
+  facturaMensual FacturaElectronicaMensual? @relation(fields: [facturaMensualId], references: [id])
 
   @@map("pagos_paciente")
+}
+
+model FacturaElectronicaMensual {
+  id                 Int                  @id @default(autoincrement())
+  folio              String               @unique
+  fecha              DateTime             @default(now())
+  mes                Int
+  anio               Int
+  importeTotal       Float
+  cantidadEnLetra    String
+  recibosCount       Int                  @default(0)
+  folioReciboInicial String?
+  folioReciboFinal   String?
+  estado             EstadoFacturaMensual @default(BORRADOR)
+  archivoUrl         String?
+  observaciones      String?              @db.Text
+  creadoPorId        Int
+  fechaEmision       DateTime?
+  createdAt          DateTime             @default(now())
+
+  creadoPor Usuario        @relation("FacturasMensualesCreadas", fields: [creadoPorId], references: [id])
+  pagos     PagoPaciente[]
+
+  @@unique([mes, anio])
+  @@map("facturas_mensuales")
 }
 
 model CargoPaciente {

@@ -30,6 +30,7 @@ import contraReciboRoutes from './routes/contraRecibo.routes';
 import notificacionesRoutes from './routes/notificaciones.routes';
 import solicitudesMedicasRoutes from './routes/solicitudesMedicas.routes';
 import pagosRoutes from './routes/pagos.routes';
+import recursosFinancierosRoutes from './routes/recursosFinancieros.routes';
 
 dotenv.config();
 
@@ -75,6 +76,7 @@ app.use(`${API}/egreso`,         egresoRoutes);
 app.use(`${API}/notificaciones`,      notificacionesRoutes);
 app.use(`${API}/solicitudes-medicas`, solicitudesMedicasRoutes);
 app.use(`${API}/pagos`,              pagosRoutes);
+app.use(`${API}/recursos-financieros`, recursosFinancierosRoutes);
 
 // Health check (indicador de red local)
 app.get('/health', (_req, res) => {

@@ -123,12 +123,6 @@ router.post(
 );
 
 router.get('/productos', getProductos);
-router.post('/movimientos', authorize('ALMACEN', 'ADMIN_GENERAL', 'AREA_MEDICA', 'JEFE_MEDICO', 'ENFERMERIA'), async (req, res, next) => {
-  req.body = parseBody(registerMovimientoSchema, req.body);
-  next();
-}, registerMovimiento);
-
-router.get('/movimientos', authorize('ALMACEN', 'ADMIN_GENERAL', 'RRHH_FINANZAS'), getMovimientos);
 
 router.get(
   '/productos/:id',
@@ -158,7 +152,8 @@ router.post(
     'ALMACEN',
     'ADMIN_GENERAL',
     'AREA_MEDICA',
-    'ENFERMERIA' as any
+    'JEFE_MEDICO',
+    'ENFERMERIA'
   ),
   async (req, res, next) => {
     req.body = parseBody(registerMovimientoSchema, req.body);

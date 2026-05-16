@@ -14,9 +14,9 @@ const router = Router();
 
 router.use(authenticate);
 
-// Consulta abierta a roles financieros + médico + admin
-const VIEWER = [Rol.RRHH_FINANZAS, Rol.ADMIN_GENERAL, Rol.ADMISIONES];
-const EDITOR = [Rol.RRHH_FINANZAS, Rol.ADMIN_GENERAL];
+// Consulta abierta a roles financieros + admisiones + admin
+const VIEWER = [Rol.RRHH_FINANZAS, Rol.RECURSOS_FINANCIEROS, Rol.ADMIN_GENERAL, Rol.ADMISIONES];
+const EDITOR = [Rol.RRHH_FINANZAS, Rol.ADMIN_GENERAL, Rol.ADMISIONES];
 
 router.get('/metodos',                    authorize(...VIEWER), getMetodosPago);
 router.get('/resumen',                    authorize(...VIEWER), getResumenPagos);

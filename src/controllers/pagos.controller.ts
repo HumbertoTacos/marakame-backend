@@ -1,12 +1,15 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
-import { MetodoPago, Rol } from '@prisma/client';
+import { MetodoPago, Rol, EstadoValidacionIngreso } from '@prisma/client';
 import { z } from 'zod';
+import { crearNotificacion } from '../utils/notificaciones';
+import { AppError } from '../middlewares/errorHandler';
 
 const registrarPagoSchema = z.object({
   monto:      z.number().positive('El monto debe ser mayor a 0'),
   metodoPago: z.nativeEnum(MetodoPago),
   concepto:   z.string().min(3, 'El concepto es requerido'),
+  folioRecibo: z.string().trim().min(1).optional(),
 });
 
 const agregarCargoSchema = z.object({
@@ -69,6 +72,7 @@ export const getEstadoCuenta = async (req: Request, res: Response) => {
         select: {
           id: true, monto: true, fechaPago: true,
           metodoPago: true, concepto: true, comprobanteUrl: true, facturado: true,
+          folioRecibo: true, estadoValidacion: true, observaciones: true,
           usuarioRecibe: { select: { nombre: true, apellidos: true } },
         },
         orderBy: { fechaPago: 'desc' },
@@ -104,26 +108,64 @@ export const getEstadoCuenta = async (req: Request, res: Response) => {
 };
 
 // POST /pagos/paciente/:id
-// Registra un pago recibido
+// Registra un pago recibido. Cuando es EFECTIVO entra al flujo de validación
+// de Recursos Financieros con su folio de recibo foliado.
 export const registrarPago = async (req: Request, res: Response) => {
   const pacienteId = parseInt(req.params.id as string);
   const body = registrarPagoSchema.parse(req.body);
   const usuarioRecibeId = req.usuario!.id;
 
-  await prisma.paciente.findUniqueOrThrow({ where: { id: pacienteId } });
+  const paciente = await prisma.paciente.findUniqueOrThrow({
+    where: { id: pacienteId },
+    select: { id: true, nombre: true, apellidoPaterno: true },
+  });
+
+  // Reglas del flujo de ingresos:
+  // - EFECTIVO → requiere folioRecibo y queda PENDIENTE_VALIDACION
+  // - Otros métodos → entran como VALIDADO (no requieren cuadre físico)
+  const esEfectivo = body.metodoPago === MetodoPago.EFECTIVO;
+  if (esEfectivo && !body.folioRecibo) {
+    throw new AppError(400, 'El folio de recibo es obligatorio al cobrar en efectivo.');
+  }
+
+  if (body.folioRecibo) {
+    const folioExistente = await prisma.pagoPaciente.findUnique({
+      where: { folioRecibo: body.folioRecibo },
+      select: { id: true },
+    });
+    if (folioExistente) {
+      throw new AppError(409, `El folio "${body.folioRecibo}" ya fue registrado en otro pago.`);
+    }
+  }
+
+  const estadoValidacion: EstadoValidacionIngreso = esEfectivo
+    ? EstadoValidacionIngreso.PENDIENTE_VALIDACION
+    : EstadoValidacionIngreso.VALIDADO;
 
   const pago = await prisma.pagoPaciente.create({
     data: {
       pacienteId,
       usuarioRecibeId,
-      monto:      body.monto,
-      metodoPago: body.metodoPago,
-      concepto:   body.concepto,
+      monto:           body.monto,
+      metodoPago:      body.metodoPago,
+      concepto:        body.concepto,
+      folioRecibo:     body.folioRecibo,
+      estadoValidacion,
     },
     include: {
       usuarioRecibe: { select: { nombre: true, apellidos: true } },
     },
   });
+
+  if (esEfectivo) {
+    await crearNotificacion({
+      titulo: 'Nuevo ingreso por validar',
+      mensaje: `Pago en efectivo de $${body.monto.toFixed(2)} (folio ${body.folioRecibo}) de ${paciente.nombre} ${paciente.apellidoPaterno} requiere validación.`,
+      tipo: 'INFO',
+      rol: Rol.RECURSOS_FINANCIEROS,
+      link: `/financieros/ingresos`,
+    });
+  }
 
   res.status(201).json({ success: true, data: pago });
 };
