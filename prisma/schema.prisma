@@ -134,25 +134,6 @@ model Usuario {
   solicitudesMedicas SolicitudMedica[]
 
   contraRecibosRecibidos ContraRecibo[] @relation("ContraReciboRecibidoPor")
-<<<<<<< HEAD
-
-  // --- RELACIONES NUEVAS DE ASISTENCIA ---
-  asistenciasRegistradas RegistroAsistencia[] @relation("AsistenciasRegistradas")
-  asistenciasRevisadas   RegistroAsistencia[] @relation("AsistenciasRevisadas")
-
-  requisicionesSolicitadas             Requisicion[]          @relation("UsuarioSolicitaRequisicion")
-  historialRequisiciones               RequisicionHistorial[]
-  comprasAutorizadas                   CompraRequisicion[]    @relation("CompraAutorizadaPor")
-  requisicionesRevisadasAlmacen        Requisicion[]          @relation("RequisicionesRevisadasAlmacen")
-  requisicionesAutorizadas             Requisicion[]          @relation("RequisicionesAutorizadas")
-  movimientosAutorizados               AlmacenMovimiento[]    @relation("MovimientosAutorizados")
-  comprasRevisadasAdministracion       CompraRequisicion[]    @relation("ComprasRevisadasAdministracion")
-  requisicionesRevisadasAdministracion Requisicion[]          @relation("RequisicionesRevisadasAdministracion")
-
-  expedientesFinalizadosEnvio CompraExpedienteFinalizado[] @relation("ExpedientesFinalizadosEnvio")
-  expedientesFinalizadosFinalizacion CompraExpedienteFinalizado[] @relation("ExpedientesFinalizadosFinalizacion")
-=======
->>>>>>> feature/compras-inventario
 
   // --- RELACIONES NUEVAS DE ASISTENCIA ---
   asistenciasRegistradas RegistroAsistencia[] @relation("AsistenciasRegistradas")
@@ -1580,11 +1561,9 @@ model ContraRecibo {
   // RELACIONES
 
   movimiento  AlmacenMovimiento @relation(fields: [movimientoId], references: [id])
-<<<<<<< HEAD
-  proveedor   Proveedor         @relation(fields: [proveedorId], references: [id])
-=======
+
   proveedor   Proveedor?        @relation(fields: [proveedorId], references: [id])
->>>>>>> feature/compras-inventario
+
   recibidoPor Usuario           @relation("ContraReciboRecibidoPor", fields: [recibidoPorId], references: [id])
 
   @@map("contra_recibos")
