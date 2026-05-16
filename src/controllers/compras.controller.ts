@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 import { AppError } from '../middlewares/errorHandler';
-import { EstadoCompra, TipoCompra } from '@prisma/client';
+import { EstadoCompra, EstadoRequisicion, TipoCompra } from '@prisma/client';
 import { crearNotificacion } from '../utils/notificaciones';
-import { registrarAuditoria } from '../utils/auditoria';
+import { registrarBitacora } from '../utils/auditoria';
 import { validarTransicionCompra } from '../utils/stateMachines';
 import {
   generateFolioCompra,
@@ -68,7 +68,7 @@ const INCLUDE_COMPRA = {
       producto: { select: { id: true, codigo: true, nombre: true, unidad: true } },
     },
   },
-  ordenCompra: {
+  ordenes: {
     include: {
       proveedor: { select: { id: true, nombre: true } },
       elaboradoPor: { select: { nombre: true, apellidos: true } },
@@ -223,7 +223,7 @@ export const createCompra = async (req: Request, res: Response): Promise<void> =
     link: `/compras/${compra.id}`,
   });
 
-  await registrarAuditoria(usuarioId, 'CREAR_COMPRA', 'compras', {
+  await registrarBitacora(usuarioId, 'CREAR_COMPRA', 'compras', {
     compraId: compra.id,
     folio,
     requisicionId: reqIdNum,
@@ -473,6 +473,175 @@ export const eliminarCotizacion = async (req: Request, res: Response): Promise<v
 };
 
 // ============================================================
+// 4c. AGREGAR COTIZACIÓN POR PRODUCTO (individual, no reemplaza)
+// ============================================================
+
+export const agregarCotizacionProducto = async (req: Request, res: Response): Promise<void> => {
+  const id = getParamId(req.params.id, 'compraId');
+  const {
+    requisicionDetalleId, proveedorId, precioUnitario,
+    tiempoEntrega, formaPago, condicionesPago,
+    garantia, marca, modelo, observaciones,
+  } = req.body as {
+    requisicionDetalleId: number;
+    proveedorId: number;
+    precioUnitario: number;
+    tiempoEntrega?: string;
+    formaPago?: string;
+    condicionesPago?: string;
+    garantia?: string;
+    marca?: string;
+    modelo?: string;
+    observaciones?: string;
+  };
+
+  if (!requisicionDetalleId) throw new AppError(400, 'requisicionDetalleId es requerido');
+  if (!proveedorId) throw new AppError(400, 'proveedorId es requerido');
+  const precioNum = parseFloat(String(precioUnitario));
+  if (isNaN(precioNum) || precioNum <= 0) throw new AppError(400, 'precioUnitario debe ser mayor a 0');
+
+  const compra = await prisma.compraRequisicion.findUnique({
+    where: { id },
+    include: {
+      requisicion: { include: { detalles: true } },
+      cotizaciones: true,
+    },
+  });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+
+  const estadosPermitidos: EstadoCompra[] = [
+    EstadoCompra.EN_COMPRAS,
+    EstadoCompra.COTIZACIONES_CARGADAS,
+    EstadoCompra.DEVUELTA_A_COMPRAS,
+  ];
+  if (!estadosPermitidos.includes(compra.estado)) {
+    throw new AppError(400, `No se pueden agregar cotizaciones en estado ${compra.estado}`);
+  }
+
+  const detalleId = Number(requisicionDetalleId);
+  const detalles = compra.requisicion?.detalles ?? [];
+  const detalle = detalles.find(d => d.id === detalleId);
+  if (!detalle) throw new AppError(400, 'El artículo no pertenece a esta compra');
+
+  const provIdNum = Number(proveedorId);
+  const proveedor = await prisma.proveedor.findUnique({ where: { id: provIdNum } });
+  if (!proveedor) throw new AppError(404, 'Proveedor no encontrado');
+
+  // Verificar que el mismo proveedor no cotice el mismo artículo dos veces
+  const duplicada = compra.cotizaciones.find(
+    c => c.requisicionDetalleId === detalleId && c.proveedorId === provIdNum
+  );
+  if (duplicada) throw new AppError(400, 'Este proveedor ya tiene cotización para este artículo');
+
+  const nueva = await prisma.$transaction(async (tx) => {
+    const cot = await tx.compraCotizacion.create({
+      data: {
+        requisicionId:        id,
+        requisicionDetalleId: detalleId,
+        proveedorId:          provIdNum,
+        precio:               precioNum * detalle.cantidadSolicitada,
+        precioUnitario:       precioNum,
+        tiempoEntrega:        tiempoEntrega        ?? null,
+        formaPago:            formaPago             ?? null,
+        condicionesPago:      condicionesPago       ?? null,
+        garantia:             garantia              ?? null,
+        marca:                marca                 ?? null,
+        modelo:               modelo                ?? null,
+        observaciones:        observaciones         ?? null,
+        esMejorOpcion:        false,
+      } as Parameters<typeof tx.compraCotizacion.create>[0]['data'],
+      include: { proveedor: { select: { id: true, nombre: true } } },
+    });
+
+    // Avanzar a COTIZACIONES_CARGADAS si todos los artículos tienen al menos 1 cotización
+    if (compra.estado === EstadoCompra.EN_COMPRAS || compra.estado === EstadoCompra.DEVUELTA_A_COMPRAS) {
+      const todasCots = [...compra.cotizaciones, cot];
+      const todosTienenCot = detalles.every(d =>
+        todasCots.some(c => c.requisicionDetalleId === d.id)
+      );
+      if (todosTienenCot) {
+        await tx.compraRequisicion.update({
+          where: { id },
+          data: { estado: EstadoCompra.COTIZACIONES_CARGADAS },
+        });
+      }
+    }
+
+    return cot;
+  });
+
+  res.status(201).json({ success: true, data: nueva });
+};
+
+// ============================================================
+// 4d. SELECCIONAR COTIZACIÓN GANADORA POR PRODUCTO
+// ============================================================
+
+export const seleccionarCotizacionProducto = async (req: Request, res: Response): Promise<void> => {
+  const id           = getParamId(req.params.id, 'compraId');
+  const cotizacionId = getParamId(req.params.cotizacionId, 'cotizacionId');
+
+  const compra = await prisma.compraRequisicion.findUnique({
+    where: { id },
+    include: {
+      cotizaciones: true,
+      requisicion: { include: { detalles: true } },
+    },
+  });
+  if (!compra) throw new AppError(404, 'Compra no encontrada');
+
+  const cotizacion = compra.cotizaciones.find(c => c.id === cotizacionId);
+  if (!cotizacion) throw new AppError(404, 'Cotización no encontrada en esta compra');
+
+  const detalleId = cotizacion.requisicionDetalleId;
+
+  await prisma.$transaction(async (tx) => {
+    // Desmarcar todas las cotizaciones del mismo artículo
+    if (detalleId) {
+      await tx.compraCotizacion.updateMany({
+        where: { requisicionId: id, requisicionDetalleId: detalleId },
+        data:  { esMejorOpcion: false },
+      });
+    } else {
+      // Cotizaciones legacy (sin artículo específico)
+      await tx.compraCotizacion.updateMany({
+        where: { requisicionId: id, requisicionDetalleId: null },
+        data:  { esMejorOpcion: false },
+      });
+    }
+    // Marcar la seleccionada
+    await tx.compraCotizacion.update({
+      where: { id: cotizacionId },
+      data:  { esMejorOpcion: true },
+    });
+
+    // Recalcular totalFinal: suma de cotizaciones ganadoras por artículo
+    const todasCots = compra.cotizaciones.map(c =>
+      c.id === cotizacionId ? { ...c, esMejorOpcion: true } : (
+        (detalleId ? c.requisicionDetalleId === detalleId : c.requisicionDetalleId === null)
+          ? { ...c, esMejorOpcion: false }
+          : c
+      )
+    );
+    const subtotal = todasCots
+      .filter(c => c.esMejorOpcion)
+      .reduce((sum, c) => sum + Number(c.precio), 0);
+    const totalFinal = subtotal * 1.16;
+
+    await tx.compraRequisicion.update({
+      where: { id },
+      data:  { totalFinal },
+    });
+  });
+
+  const actualizada = await prisma.compraRequisicion.findUnique({
+    where: { id },
+    include: INCLUDE_COMPRA,
+  });
+  res.json({ success: true, data: actualizada });
+};
+
+// ============================================================
 // 5. SELECCIONAR PROVEEDOR GANADOR
 // ============================================================
 
@@ -543,10 +712,31 @@ export const enviarAAdministracion = async (req: Request, res: Response): Promis
   const id = getParamId(req.params.id, 'compraId');
   const { observaciones } = req.body;
 
-  const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
+  const compra = await prisma.compraRequisicion.findUnique({
+    where: { id },
+    include: {
+      cotizaciones: true,
+      requisicion: { include: { detalles: true } },
+    },
+  });
   if (!compra) throw new AppError(404, 'Compra no encontrada');
 
   validarTransicionCompra(compra.estado, EstadoCompra.EN_REVISION_ADMINISTRACION);
+
+  // Validar que cada artículo tenga el mínimo de cotizaciones requeridas
+  const detalles = compra.requisicion?.detalles ?? [];
+  if (detalles.length > 0) {
+    const minCots = compra.esCompraMayor ? 3 : 1;
+    for (const detalle of detalles) {
+      const cotsDet = compra.cotizaciones.filter(c => c.requisicionDetalleId === detalle.id);
+      if (cotsDet.length < minCots) {
+        throw new AppError(
+          400,
+          `El artículo "${detalle.productoNombre}" requiere mínimo ${minCots} cotización${minCots > 1 ? 'es' : ''} (tiene ${cotsDet.length})`
+        );
+      }
+    }
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.compraRequisicion.update({
@@ -588,10 +778,30 @@ export const aprobarAdministracion = async (req: Request, res: Response): Promis
     throw new AppError(403, 'Solo administración puede aprobar en esta etapa');
   }
 
-  const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
+  const compra = await prisma.compraRequisicion.findUnique({
+    where: { id },
+    include: {
+      cotizaciones: true,
+      requisicion: { include: { detalles: true } },
+    },
+  });
   if (!compra) throw new AppError(404, 'Compra no encontrada');
 
   validarTransicionCompra(compra.estado, EstadoCompra.EN_REVISION_DIRECCION);
+
+  // Validar que cada artículo tenga un ganador seleccionado
+  const detallesAdm = compra.requisicion?.detalles ?? [];
+  for (const detalle of detallesAdm) {
+    const tieneGanador = compra.cotizaciones.some(
+      c => c.requisicionDetalleId === detalle.id && c.esMejorOpcion
+    );
+    if (!tieneGanador) {
+      throw new AppError(
+        400,
+        `Selecciona el proveedor ganador para "${detalle.productoNombre}" antes de enviar a Dirección`
+      );
+    }
+  }
 
   await prisma.$transaction(async (tx) => {
     await tx.compraRequisicion.update({
@@ -684,7 +894,12 @@ export const autorizarDireccion = async (req: Request, res: Response): Promise<v
 
   const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
   if (!compra) throw new AppError(404, 'Compra no encontrada');
-  if (compra.usuarioAutorizaId) throw new AppError(400, 'Esta compra ya fue autorizada');
+
+  // Idempotente: si ya fue autorizada devuelve éxito en lugar de 400
+  if (compra.usuarioAutorizaId) {
+    res.json({ success: true, message: 'Compra ya estaba autorizada' });
+    return;
+  }
 
   validarTransicionCompra(compra.estado, EstadoCompra.AUTORIZADA);
 
@@ -711,7 +926,7 @@ export const autorizarDireccion = async (req: Request, res: Response): Promise<v
     link: `/compras/${id}`,
   });
 
-  await registrarAuditoria(usuarioId, 'AUTORIZAR_COMPRA', 'compras', {
+  await registrarBitacora(usuarioId, 'AUTORIZAR_COMPRA', 'compras', {
     compraId: id,
     folio: compra.folio,
   });
@@ -763,7 +978,7 @@ export const rechazarDireccion = async (req: Request, res: Response): Promise<vo
     link: `/compras/${id}`,
   });
 
-  await registrarAuditoria(usuarioId, 'RECHAZAR_COMPRA', 'compras', {
+  await registrarBitacora(usuarioId, 'RECHAZAR_COMPRA', 'compras', {
     compraId: id,
     folio: compra.folio,
     motivoRechazo,
@@ -786,41 +1001,93 @@ export const generarOrden = async (req: Request, res: Response): Promise<void> =
   });
   if (!compra) throw new AppError(404, 'Compra no encontrada');
 
-  validarTransicionCompra(compra.estado, EstadoCompra.ORDEN_GENERADA);
-
-  let proveedorIdFinal = compra.proveedorSeleccionadoId;
-  if (!proveedorIdFinal) {
-    const mejorCot = await prisma.compraCotizacion.findFirst({
-      where: { requisicionId: id, esMejorOpcion: true },
-    });
-    if (!mejorCot) {
-      throw new AppError(400, 'No hay cotización marcada como mejor opción. Verifica el proceso.');
-    }
-    proveedorIdFinal = mejorCot.proveedorId;
+  // Idempotent: if orders already exist, return them as-is
+  const existingOrdenes = await prisma.compraOrden.findMany({
+    where: { requisicionId: id },
+    include: {
+      proveedor:    { select: { id: true, nombre: true } },
+      elaboradoPor: { select: { nombre: true, apellidos: true } },
+      autorizadoPor: { select: { nombre: true, apellidos: true } },
+    },
+  });
+  if (existingOrdenes.length > 0) {
+    res.json({ success: true, data: existingOrdenes });
+    return;
   }
 
-  const existeOrden = await prisma.compraOrden.findFirst({ where: { requisicionId: id } });
-  if (existeOrden) throw new AppError(400, 'Ya existe orden de compra para esta requisición');
+  validarTransicionCompra(compra.estado, EstadoCompra.ORDEN_GENERADA);
 
-  const folio = await generateFolioOrden();
+  // Group best cotizations by provider
+  const mejoresCotizaciones = await prisma.compraCotizacion.findMany({
+    where: { requisicionId: id, esMejorOpcion: true },
+  });
 
-  const orden = await prisma.$transaction(async (tx) => {
-    const nueva = await tx.compraOrden.create({
-      data: {
-        requisicionId:   id,
-        folio,
-        proveedorId:     proveedorIdFinal,
-        total:           compra.totalFinal ?? compra.presupuestoEstimado ?? 0,
-        elaboradoPorId:  compra.usuarioId,
-        revisadoPorId:   compra.revisadoAdministracionPorId ?? null,
-        autorizadoPorId: compra.usuarioAutorizaId ?? null,
-      },
-      include: {
-        proveedor:    { select: { id: true, nombre: true } },
-        elaboradoPor: { select: { nombre: true, apellidos: true } },
-        autorizadoPor: { select: { nombre: true, apellidos: true } },
-      },
-    });
+  const gruposPorProveedor = new Map<number, typeof mejoresCotizaciones>();
+  for (const cot of mejoresCotizaciones) {
+    const grupo = gruposPorProveedor.get(cot.proveedorId) ?? [];
+    grupo.push(cot);
+    gruposPorProveedor.set(cot.proveedorId, grupo);
+  }
+
+  // Fallback to proveedorSeleccionadoId when no per-product cotizations exist
+  if (gruposPorProveedor.size === 0) {
+    if (!compra.proveedorSeleccionadoId) {
+      throw new AppError(400, 'No hay cotización marcada como mejor opción. Verifica el proceso.');
+    }
+    gruposPorProveedor.set(compra.proveedorSeleccionadoId, []);
+  }
+
+  const proveedorEntries = Array.from(gruposPorProveedor.entries());
+
+  // Generate folios — first folio uses the normal generator;
+  // subsequent ones increment from the previous to avoid reading the same
+  // DB state and returning duplicate folio numbers in the same batch.
+  const folios: string[] = [];
+  for (let i = 0; i < proveedorEntries.length; i++) {
+    if (i === 0) {
+      folios.push(await generateFolioOrden());
+    } else {
+      const prev  = folios[i - 1];
+      const parts = prev.split('-');
+      let nextNum  = parseInt(parts[2], 10) + 1;
+      let candidato = `${parts[0]}-${parts[1]}-${String(nextNum).padStart(5, '0')}`;
+      while (await prisma.compraOrden.findUnique({ where: { folio: candidato }, select: { id: true } })) {
+        nextNum++;
+        candidato = `${parts[0]}-${parts[1]}-${String(nextNum).padStart(5, '0')}`;
+      }
+      folios.push(candidato);
+    }
+  }
+
+  const ordenes = await prisma.$transaction(async (tx) => {
+    const nuevas = [];
+
+    for (let i = 0; i < proveedorEntries.length; i++) {
+      const [proveedorId, cots] = proveedorEntries[i];
+      const folio = folios[i];
+
+      const totalProveedor = cots.length > 0
+        ? cots.reduce((sum, c) => sum + Number(c.precio), 0)
+        : Number(compra.totalFinal ?? compra.presupuestoEstimado ?? 0);
+
+      const nueva = await tx.compraOrden.create({
+        data: {
+          requisicionId:   id,
+          folio,
+          proveedorId,
+          total:           totalProveedor,
+          elaboradoPorId:  compra.usuarioId,
+          revisadoPorId:   compra.revisadoAdministracionPorId ?? null,
+          autorizadoPorId: compra.usuarioAutorizaId ?? null,
+        },
+        include: {
+          proveedor:    { select: { id: true, nombre: true } },
+          elaboradoPor: { select: { nombre: true, apellidos: true } },
+          autorizadoPor: { select: { nombre: true, apellidos: true } },
+        },
+      });
+      nuevas.push(nueva);
+    }
 
     await tx.compraRequisicion.update({
       where: { id },
@@ -830,29 +1097,31 @@ export const generarOrden = async (req: Request, res: Response): Promise<void> =
       },
     });
 
+    const foliosList = folios.join(', ');
     await registrarHistorial(
       tx, id, EstadoCompra.ORDEN_GENERADA, usuarioId,
-      `Orden de compra generada: ${folio}`,
+      `Órdenes de compra generadas: ${foliosList}`,
     );
 
-    return nueva;
+    return nuevas;
   });
 
+  const foliosList = folios.join(', ');
   await crearNotificacion({
-    titulo: 'Orden de Compra Generada',
-    mensaje: `Orden ${folio} generada para compra ${compra.folio}.`,
+    titulo: 'Órdenes de Compra Generadas',
+    mensaje: `${ordenes.length > 1 ? 'Órdenes' : 'Orden'} ${foliosList} generada(s) para compra ${compra.folio}.`,
     tipo: 'INFO',
     rol: 'ALMACEN',
     link: `/compras/${id}`,
   });
 
-  await registrarAuditoria(usuarioId, 'GENERAR_ORDEN', 'compras', {
+  await registrarBitacora(usuarioId, 'GENERAR_ORDEN', 'compras', {
     compraId: id,
-    ordenId: orden.id,
-    folio,
+    ordenesCount: ordenes.length,
+    folios: foliosList,
   });
 
-  res.status(201).json({ success: true, data: orden });
+  res.status(201).json({ success: true, data: ordenes });
 };
 
 // ============================================================
@@ -946,8 +1215,11 @@ export const subirFactura = async (req: Request, res: Response): Promise<void> =
 
   const documentoUrl = `/uploads/facturas/${file.filename}`;
 
-  const { monto: montoBody, numero: numeroBody } = req.body;
+  const { monto: montoBody, numero: numeroBody, proveedorId: proveedorIdBody } = req.body;
   const montoNum = parseFloat(montoBody ?? '0');
+  const proveedorIdResolved = proveedorIdBody
+    ? parseInt(String(proveedorIdBody), 10)
+    : (compra.proveedorSeleccionadoId ?? null);
 
   await prisma.$transaction(async (tx) => {
     await tx.compraFactura.create({
@@ -955,7 +1227,7 @@ export const subirFactura = async (req: Request, res: Response): Promise<void> =
         requisicionId,
         numero:      numeroBody ?? file.originalname,
         monto:       montoNum,
-        proveedorId: compra.proveedorSeleccionadoId ?? null,
+        proveedorId: proveedorIdResolved,
         documentoUrl,
       },
     });
@@ -1075,7 +1347,7 @@ export const generarOrdenPago = async (req: Request, res: Response): Promise<voi
 
   const compra = await prisma.compraRequisicion.findUnique({
     where: { id },
-    include: { ordenCompra: true, facturas: true },
+    include: { ordenes: true, facturas: true },
   });
   if (!compra) throw new AppError(404, 'Compra no encontrada');
 
@@ -1111,8 +1383,8 @@ export const generarOrdenPago = async (req: Request, res: Response): Promise<voi
         autorizadoPorId: compra.usuarioAutorizaId ?? null,
         detalles: {
           create: compra.facturas.map((f) => ({
-            fechaOrdenCompra: compra.ordenCompra?.fecha ?? new Date(),
-            folioOrdenCompra: compra.ordenCompra?.folio ?? null,
+            fechaOrdenCompra: compra.ordenes[0]?.fecha ?? new Date(),
+            folioOrdenCompra: compra.ordenes.map(o => o.folio).join(', ') || null,
             numeroFactura:    f.numero,
             proveedorId:
               f.proveedorId ?? compra.proveedorSeleccionadoId ?? null,
@@ -1136,7 +1408,7 @@ export const generarOrdenPago = async (req: Request, res: Response): Promise<voi
     return nueva;
   });
 
-  await registrarAuditoria(usuarioId, 'GENERAR_ORDEN_PAGO', 'compras', {
+  await registrarBitacora(usuarioId, 'GENERAR_ORDEN_PAGO', 'compras', {
     compraId: id,
     ordenPagoId: ordenPago.id,
     folio,
@@ -1162,12 +1434,26 @@ export const finalizarCompra = async (req: Request, res: Response): Promise<void
   const compra = await prisma.compraRequisicion.findUnique({ where: { id } });
   if (!compra) throw new AppError(404, 'Compra no encontrada');
 
+  if (compra.estado === EstadoCompra.FINALIZADO) {
+    // Ensure Requisicion estado is also synced (covers records created before this fix)
+    await prisma.requisicion.updateMany({
+      where: { id: compra.requisicionId, estado: { not: EstadoRequisicion.FINALIZADA } },
+      data: { estado: EstadoRequisicion.FINALIZADA },
+    });
+    res.json({ success: true, message: 'Compra ya estaba finalizada' });
+    return;
+  }
+
   validarTransicionCompra(compra.estado, EstadoCompra.FINALIZADO);
 
   await prisma.$transaction(async (tx) => {
     await tx.compraRequisicion.update({
       where: { id },
       data: { estado: EstadoCompra.FINALIZADO },
+    });
+    await tx.requisicion.update({
+      where: { id: compra.requisicionId },
+      data: { estado: EstadoRequisicion.FINALIZADA },
     });
     await registrarHistorial(
       tx, id, EstadoCompra.FINALIZADO, usuarioId,
@@ -1183,7 +1469,7 @@ export const finalizarCompra = async (req: Request, res: Response): Promise<void
     link: `/compras/${id}`,
   });
 
-  await registrarAuditoria(usuarioId, 'FINALIZAR_COMPRA', 'compras', {
+  await registrarBitacora(usuarioId, 'FINALIZAR_COMPRA', 'compras', {
     compraId: id,
     folio: compra.folio,
   });

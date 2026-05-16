@@ -134,6 +134,7 @@ model Usuario {
   solicitudesMedicas SolicitudMedica[]
 
   contraRecibosRecibidos ContraRecibo[] @relation("ContraReciboRecibidoPor")
+<<<<<<< HEAD
 
   // --- RELACIONES NUEVAS DE ASISTENCIA ---
   asistenciasRegistradas RegistroAsistencia[] @relation("AsistenciasRegistradas")
@@ -150,7 +151,24 @@ model Usuario {
 
   expedientesFinalizadosEnvio CompraExpedienteFinalizado[] @relation("ExpedientesFinalizadosEnvio")
   expedientesFinalizadosFinalizacion CompraExpedienteFinalizado[] @relation("ExpedientesFinalizadosFinalizacion")
+=======
+>>>>>>> feature/compras-inventario
 
+  // --- RELACIONES NUEVAS DE ASISTENCIA ---
+  asistenciasRegistradas RegistroAsistencia[] @relation("AsistenciasRegistradas")
+  asistenciasRevisadas   RegistroAsistencia[] @relation("AsistenciasRevisadas")
+
+  requisicionesSolicitadas             Requisicion[]          @relation("UsuarioSolicitaRequisicion")
+  historialRequisiciones               RequisicionHistorial[]
+  comprasAutorizadas                   CompraRequisicion[]    @relation("CompraAutorizadaPor")
+  requisicionesRevisadasAlmacen        Requisicion[]          @relation("RequisicionesRevisadasAlmacen")
+  requisicionesAutorizadas             Requisicion[]          @relation("RequisicionesAutorizadas")
+  movimientosAutorizados               AlmacenMovimiento[]    @relation("MovimientosAutorizados")
+  comprasRevisadasAdministracion       CompraRequisicion[]    @relation("ComprasRevisadasAdministracion")
+  requisicionesRevisadasAdministracion Requisicion[]          @relation("RequisicionesRevisadasAdministracion")
+
+  expedientesFinalizadosEnvio CompraExpedienteFinalizado[] @relation("ExpedientesFinalizadosEnvio")
+  expedientesFinalizadosFinalizacion CompraExpedienteFinalizado[] @relation("ExpedientesFinalizadosFinalizacion")
   @@map("usuarios")
 }
 
@@ -1328,6 +1346,8 @@ model Requisicion {
 
   areaSolicitante String
 
+  tipo TipoCompra @default(ORDINARIA)
+
   estado EstadoRequisicion @default(CREADA)
 
   descripcion String?
@@ -1537,7 +1557,9 @@ model ContraRecibo {
 
   movimientoId Int @unique
 
-  proveedorId Int
+  proveedorId Int?
+
+  proveedorNombre String?
 
   numeroFactura String
 
@@ -1558,7 +1580,11 @@ model ContraRecibo {
   // RELACIONES
 
   movimiento  AlmacenMovimiento @relation(fields: [movimientoId], references: [id])
+<<<<<<< HEAD
   proveedor   Proveedor         @relation(fields: [proveedorId], references: [id])
+=======
+  proveedor   Proveedor?        @relation(fields: [proveedorId], references: [id])
+>>>>>>> feature/compras-inventario
   recibidoPor Usuario           @relation("ContraReciboRecibidoPor", fields: [recibidoPorId], references: [id])
 
   @@map("contra_recibos")
@@ -1686,7 +1712,7 @@ model CompraRequisicion {
   usuarioAutoriza           Usuario?    @relation("CompraAutorizadaPor", fields: [usuarioAutorizaId], references: [id])
 
   cotizaciones CompraCotizacion[]
-  ordenCompra  CompraOrden?
+  ordenes      CompraOrden[]
   facturas     CompraFactura[]
   pago         CompraPago?
   ordenPago    CompraOrdenPago?
@@ -1714,9 +1740,16 @@ model CompraCotizacion {
 
   esMejorOpcion Boolean @default(false)
 
-  formaPago String?
+  formaPago       String?
+  condicionesPago String?
 
   tipoCredito String?
+
+  garantia String?
+  marca    String?
+  modelo   String?
+
+  observaciones String?
 
   documentoUrl String?
 
@@ -1734,7 +1767,7 @@ model CompraCotizacion {
 
 model CompraOrden {
   id              Int      @id @default(autoincrement())
-  requisicionId   Int      @unique
+  requisicionId   Int
   folio           String   @unique
   fecha           DateTime @default(now())
   proveedorId     Int
