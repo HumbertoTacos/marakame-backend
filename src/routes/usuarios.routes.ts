@@ -12,21 +12,21 @@ import {
 
 const router = Router();
 
-// Personal clínico — accesible a Jefe Médico y Admin General (filtro por rol en el controller)
+// Personal clínico — Jefe Médico, Jefe Clínico y Admin (filtro por rol en el controller)
 router.get(
   '/personal-clinico',
   authenticate,
-  authorize(Rol.JEFE_MEDICO, Rol.ADMIN_GENERAL),
+  authorize(Rol.JEFE_MEDICO, Rol.JEFE_CLINICO, Rol.ADMIN_GENERAL),
   getPersonalClinico,
 );
 
 // El resto de endpoints solo ADMIN_GENERAL
 router.use(authenticate, authorize(Rol.ADMIN_GENERAL));
 
-router.get('/',                     getUsuarios);
-router.post('/',                    createUsuario);
-router.put('/:id',                  updateUsuario);
-router.patch('/:id/toggle-activo',  toggleActivo);
+router.get('/', getUsuarios);
+router.post('/', createUsuario);
+router.put('/:id', updateUsuario);
+router.patch('/:id/toggle-activo', toggleActivo);
 router.patch('/:id/reset-password', resetPassword);
 
 export default router;

@@ -1,6 +1,6 @@
 import { prisma } from './prisma';
 
-export async function registrarAuditoria(
+export async function registrarBitacora(
   usuarioId: number,
   accion: string,
   modulo: string,
@@ -12,6 +12,6 @@ export async function registrarAuditoria(
       data: { usuarioId, accion, modulo, detalle, ip },
     });
   } catch {
-    // No interrumpir el flujo por error de auditoría
+    // No interrumpir el flujo por error de bitácora
   }
 }

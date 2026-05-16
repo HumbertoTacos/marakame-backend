@@ -1,18 +1,49 @@
 import { Request, Response } from 'express';
 import { prisma } from '../utils/prisma';
 
-export const getAuditoria = async (req: Request, res: Response) => {
-  const { modulo, usuarioId, fechaInicio, fechaFin } = req.query;
+export const getBitacoraLogs = async (req: Request, res: Response) => {
+  const { modulo, usuarioId, fechaInicio, fechaFin, accion, busqueda } = req.query;
 
   const whereArgs: any = {};
 
   if (modulo) whereArgs.modulo = modulo as string;
   if (usuarioId) whereArgs.usuarioId = parseInt(usuarioId as string, 10);
   
+  if (accion) {
+    whereArgs.accion = {
+      contains: accion as string
+    };
+  }
+
+  if (busqueda) {
+    whereArgs.usuario = {
+      OR: [
+        { nombre: { contains: busqueda as string } },
+        { apellidos: { contains: busqueda as string } }
+      ]
+    };
+  }
+
   if (fechaInicio || fechaFin) {
     whereArgs.createdAt = {};
     if (fechaInicio) whereArgs.createdAt.gte = new Date(fechaInicio as string);
-    if (fechaFin) whereArgs.createdAt.lte = new Date(fechaFin as string);
+    if (fechaFin) {
+      const d = new Date(fechaFin as string);
+      d.setHours(23, 59, 59, 999); // Asegurar que incluya todo el día final
+      whereArgs.createdAt.lte = d;
+    }
+  }
+
+  const isGlobalAdmin = req.usuario!.rol === 'ADMIN_GENERAL' || req.usuario!.rol === 'DIRECCION';
+
+  if (!isGlobalAdmin) {
+    if (!req.usuario!.esJefe) {
+      return res.status(403).json({ success: false, message: 'Acceso denegado. Se requiere nivel de jefatura.' });
+    }
+    // Si es jefe pero no global, solo ve lo de su propio departamento/rol
+    whereArgs.usuario = {
+      rol: req.usuario!.rol
+    };
   }
 
   const logs = await prisma.auditoria.findMany({
@@ -40,6 +71,6 @@ export const registrarAccion = async (usuarioId: number, accion: string, modulo:
       }
     });
   } catch (error) {
-    console.error('Error al registrar auditoría transversal:', error);
+    console.error('Error al registrar bitácora transversal:', error);
   }
 };

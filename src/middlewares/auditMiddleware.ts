@@ -91,8 +91,9 @@ export function auditMiddleware(req: Request, res: Response, next: NextFunction)
         }
 
         // Incluir body resumido (sin passwords ni datos sensibles)
-        if (req.body && Object.keys(req.body).length > 0) {
-          const bodySafe = { ...req.body };
+        const sourceBody = res.locals.auditBodyOverride || req.body;
+        if (sourceBody && Object.keys(sourceBody).length > 0) {
+          const bodySafe = { ...sourceBody };
           delete bodySafe.password;
           delete bodySafe.passwordHash;
           delete bodySafe.token;

@@ -6,7 +6,7 @@ import { getDashboardStats, getDashboardDirectora } from '../controllers/dashboa
 const router = Router();
 
 router.use(authenticate);
-router.get('/',          getDashboardStats);
-router.get('/directora', authorize(Rol.ADMIN_GENERAL), getDashboardDirectora);
+router.get('/', getDashboardStats);
+router.get('/directora', authorize(Rol.ADMIN_GENERAL, Rol.DIRECCION_GENERAL), getDashboardDirectora);
 
 export default router;
