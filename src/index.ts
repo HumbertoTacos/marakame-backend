@@ -31,6 +31,8 @@ import notificacionesRoutes from './routes/notificaciones.routes';
 import solicitudesMedicasRoutes from './routes/solicitudesMedicas.routes';
 import pagosRoutes from './routes/pagos.routes';
 import recursosFinancierosRoutes from './routes/recursosFinancieros.routes';
+import proveedoresRoutes from './routes/proveedores.routes';
+import requisicionesRoutes from './routes/requisiciones.routes';
 
 dotenv.config();
 
@@ -74,6 +76,8 @@ app.use(`${API}/clinica`,        clinicaRoutes);
 app.use(`${API}/inventario`,     inventarioRoutes);
 app.use(`${API}/egreso`,         egresoRoutes);
 app.use(`${API}/notificaciones`,      notificacionesRoutes);
+app.use(`${API}/proveedores`,        proveedoresRoutes);
+app.use(`${API}/requisiciones`,      requisicionesRoutes);
 app.use(`${API}/solicitudes-medicas`, solicitudesMedicasRoutes);
 app.use(`${API}/pagos`,              pagosRoutes);
 app.use(`${API}/recursos-financieros`, recursosFinancierosRoutes);

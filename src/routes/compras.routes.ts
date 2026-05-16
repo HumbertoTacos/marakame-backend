@@ -1,19 +1,30 @@
 import { Router } from 'express';
+import { authenticate, authorize } from '../middlewares/auth';
 
 import {
-  authenticate,
-  authorize
-} from '../middlewares/auth';
-
-import {
-  createRequisicion,
-  getRequisiciones,
-  updateRequisicionEstado,
-  addCotizacion,
+  getCompras,
+  getCompraById,
+  createCompra,
+  registrarCotizacion,
+  registrarCotizacionesBulk,
+  eliminarCotizacion,
+  agregarCotizacionProducto,
+  seleccionarCotizacionProducto,
+  seleccionarProveedor,
+  enviarAAdministracion,
+  aprobarAdministracion,
+  devolverACompras,
+  autorizarDireccion,
+  rechazarDireccion,
   generarOrden,
+  registrarFactura,
+  subirFactura,
+  generarExpediente,
+  enviarAFinanzas,
   generarOrdenPago,
+  finalizarCompra,
+  dashboardCompras,
   upload,
-  subirFactura
 } from '../controllers/compras.controller';
 
 const router = Router();
@@ -24,123 +35,93 @@ router.use(authenticate);
 // ROLES
 // ============================================================
 
-const ROLES_SOLICITANTES = [
-  'ADMIN_GENERAL',
-  'ALMACEN',
-  'AREA_MEDICA',
-  'ENFERMERIA',
-  'NUTRICION',
-  'PSICOLOGIA',
-  'ADMISIONES'
-] as const;
-
-const ROLES_COMPRAS = [
-  'ALMACEN',
-  'ADMIN_GENERAL'
-] as const;
-
-const ROLES_ADMINISTRACION = [
-  'ADMIN_GENERAL',
-  'RRHH_FINANZAS'
-] as const;
-
-const ROLES_DIRECCION = [
-  'ADMIN_GENERAL'
-] as const;
+const ROLES_COMPRAS        = ['ALMACEN', 'ADMIN_GENERAL'] as const;
+const ROLES_ADMINISTRACION = ['RRHH_FINANZAS', 'ADMIN_GENERAL', 'JEFE_ADMINISTRATIVO'] as const;
+const ROLES_DIRECCION      = ['ADMIN_GENERAL'] as const;
+const ROLES_TODOS          = ['ADMIN_GENERAL', 'ALMACEN', 'RRHH_FINANZAS', 'JEFE_ADMINISTRATIVO'] as const;
 
 // ============================================================
-// REQUISICIONES
+// DASHBOARD
 // ============================================================
 
-// Crear requisición
-router.post(
-  '/requisiciones',
+router.get('/dashboard', authorize(...ROLES_TODOS), dashboardCompras);
 
-  authorize(...ROLES_SOLICITANTES),
+// ============================================================
+// LISTADO Y DETALLE
+// ============================================================
 
-  createRequisicion
-);
+router.get('/', authorize(...ROLES_TODOS), getCompras);
+router.get('/:id', authorize(...ROLES_TODOS), getCompraById);
 
-// Obtener todas
-router.get(
-  '/requisiciones',
+// ============================================================
+// CREAR COMPRA DESDE REQUISICIÓN
+// ============================================================
 
-  authenticate,
-
-  getRequisiciones
-);
-
-// Cambiar estado
-router.patch(
-  '/requisiciones/:id/estado',
-
-  authorize(
-    'ADMIN_GENERAL',
-    'RRHH_FINANZAS',
-    'ALMACEN'
-  ),
-
-  updateRequisicionEstado
-);
+router.post('/', authorize(...ROLES_COMPRAS), createCompra);
 
 // ============================================================
 // COTIZACIONES
 // ============================================================
 
-// Agregar cotización
-router.post(
-  '/requisiciones/:requisicionId/cotizaciones',
-
-  authorize(...ROLES_COMPRAS),
-
-  addCotizacion
-);
+router.post('/:id/cotizaciones', authorize(...ROLES_COMPRAS), registrarCotizacion);
+router.post('/:id/cotizaciones-bulk', authorize(...ROLES_COMPRAS), registrarCotizacionesBulk);
+router.post('/:id/cotizacion-producto', authorize(...ROLES_COMPRAS), agregarCotizacionProducto);
+router.patch('/:id/cotizaciones/:cotizacionId/seleccionar', authorize(...ROLES_COMPRAS, ...ROLES_ADMINISTRACION), seleccionarCotizacionProducto);
+router.delete('/:id/cotizaciones/:cotizacionId', authorize(...ROLES_COMPRAS), eliminarCotizacion);
 
 // ============================================================
-// ÓRDENES DE COMPRA
+// SELECCIONAR PROVEEDOR
 // ============================================================
 
-// Generar orden de compra
-router.post(
-  '/requisiciones/:requisicionId/orden',
-
-  authorize(...ROLES_DIRECCION),
-
-  generarOrden
-);
+router.patch('/:id/seleccionar-proveedor', authorize(...ROLES_COMPRAS), seleccionarProveedor);
 
 // ============================================================
-// ÓRDENES DE PAGO
+// FLUJO DE ESTADOS
 // ============================================================
 
-// Generar orden de pago
-router.post(
-  '/requisiciones/:requisicionId/orden-pago',
+router.patch('/:id/enviar-administracion', authorize(...ROLES_COMPRAS), enviarAAdministracion);
 
-  authorize(
-    'RRHH_FINANZAS',
-    'ADMIN_GENERAL'
-  ),
+router.patch('/:id/aprobar-administracion', authorize(...ROLES_ADMINISTRACION), aprobarAdministracion);
 
-  generarOrdenPago
-);
+router.patch('/:id/devolver-compras', authorize(...ROLES_ADMINISTRACION), devolverACompras);
+
+router.patch('/:id/autorizar-direccion', authorize(...ROLES_DIRECCION), autorizarDireccion);
+
+router.patch('/:id/rechazar-direccion', authorize(...ROLES_DIRECCION), rechazarDireccion);
+
+// ============================================================
+// ORDEN DE COMPRA
+// ============================================================
+
+router.post('/:id/orden', authorize(...ROLES_TODOS), generarOrden);
 
 // ============================================================
 // FACTURAS
 // ============================================================
 
-// Subir factura
+router.post('/:id/facturas', authorize(...ROLES_ADMINISTRACION), registrarFactura);
+
 router.post(
-  '/requisiciones/:requisicionId/factura',
-
-  authorize(
-    'RRHH_FINANZAS',
-    'ADMIN_GENERAL'
-  ),
-
+  '/:id/factura-upload',
+  authorize(...ROLES_ADMINISTRACION),
   upload.single('factura'),
-
-  subirFactura
+  subirFactura,
 );
+
+// ============================================================
+// EXPEDIENTE Y FINANZAS
+// ============================================================
+
+router.patch('/:id/generar-expediente', authorize(...ROLES_ADMINISTRACION), generarExpediente);
+
+router.patch('/:id/enviar-finanzas', authorize(...ROLES_ADMINISTRACION), enviarAFinanzas);
+
+// ============================================================
+// ORDEN DE PAGO Y FINALIZAR
+// ============================================================
+
+router.post('/:id/orden-pago', authorize(...ROLES_ADMINISTRACION), generarOrdenPago);
+
+router.patch('/:id/finalizar', authorize(...ROLES_ADMINISTRACION), finalizarCompra);
 
 export default router;

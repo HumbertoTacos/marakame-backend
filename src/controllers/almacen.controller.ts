@@ -50,7 +50,7 @@ export const createProducto = async (req: Request, res: Response) => {
       unidad: data.unidad || 'PIEZAS',
       stockMinimo: data.stockMinimo || 5,
       stockActual: 0,
-      estadoStock: 'NORMAL',
+      estadoStock: 'CRITICO',
       ubicacion: data.ubicacion || null
     }
   });
@@ -203,35 +203,21 @@ export const registerMovimiento = async (req: Request, res: Response) => {
 
   let requisicionIdNum: number | undefined;
 
-  if (requisicionId !== undefined && requisicionId !== null && requisicionId !== '') {
-    requisicionIdNum = parseInt(String(requisicionId), 10);
+    if (requisicionId !== undefined && requisicionId !== null && requisicionId !== '') {
+      requisicionIdNum = parseInt(String(requisicionId), 10);
 
-    if (isNaN(requisicionIdNum) || requisicionIdNum <= 0) {
-      throw new AppError(400, 'El requisicionId proporcionado no es válido');
+      if (isNaN(requisicionIdNum) || requisicionIdNum <= 0) {
+        throw new AppError(400, 'El requisicionId proporcionado no es válido');
+      }
+
+      const requisicion = await prisma.requisicion.findUnique({
+        where: { id: requisicionIdNum },
+      });
+
+      if (!requisicion) {
+        throw new AppError(404, 'Requisición no encontrada');
+      }
     }
-
-    const requisicion = await prisma.compraRequisicion.findUnique({
-      where: { id: requisicionIdNum },
-      include: { detalles: true },
-    });
-
-    if (!requisicion) {
-      throw new AppError(404, 'Requisición no encontrada');
-    }
-
-    // Verificar que el producto pertenezca a la requisición (coincidencia por nombre)
-    const perteneceARequisicion = requisicion.detalles.some(
-      (d) => d.producto.toLowerCase().includes(producto.nombre.toLowerCase()) ||
-             producto.nombre.toLowerCase().includes(d.producto.toLowerCase())
-    );
-
-    if (!perteneceARequisicion) {
-      throw new AppError(
-        400,
-        `El producto "${producto.nombre}" no está en la requisición ${requisicion.folio}`
-      );
-    }
-  }
 
   // ============================================================
   // 6. VALIDAR CADUCIDAD (MEDICAMENTO / ALIMENTO)
@@ -638,5 +624,412 @@ export const entregarSalida = async (
   res.json({
     success: true,
     message: 'Salida entregada correctamente'
+  });
+};
+
+// ============================================================
+// ELIMINAR PRODUCTO (hard delete — sin campo deletedAt en schema)
+// ============================================================
+
+export const deleteProducto = async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id as string, 10);
+
+  const producto = await prisma.almacenProducto.findUnique({ where: { id } });
+  if (!producto) throw new AppError(404, 'Producto no encontrado');
+
+  const tieneMovimientos = await prisma.almacenMovimiento.count({ where: { productoId: id } });
+  if (tieneMovimientos > 0) {
+    throw new AppError(
+      400,
+      'No se puede eliminar un producto con movimientos registrados'
+    );
+  }
+
+  await prisma.almacenLote.deleteMany({ where: { productoId: id } });
+  await prisma.almacenProducto.delete({ where: { id } });
+
+  res.json({ success: true, message: 'Producto eliminado correctamente' });
+};
+
+// ============================================================
+// LOTES
+// ============================================================
+
+export const getLotes = async (req: Request, res: Response) => {
+  const { productoId, vencidos, proximosVencer } = req.query;
+
+  const where: any = {};
+  if (productoId) where.productoId = parseInt(productoId as string, 10);
+
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+
+  if (vencidos === 'true') {
+    where.fechaCaducidad = { lt: hoy };
+  } else if (proximosVencer === 'true') {
+    const limite = new Date(hoy);
+    limite.setDate(limite.getDate() + 30);
+    where.fechaCaducidad = { gte: hoy, lte: limite };
+  }
+
+  const lotes = await prisma.almacenLote.findMany({
+    where,
+    include: {
+      producto: { select: { id: true, codigo: true, nombre: true, unidad: true } },
+    },
+    orderBy: { fechaCaducidad: 'asc' },
+  });
+
+  res.json({ success: true, data: lotes });
+};
+
+export const createLote = async (req: Request, res: Response) => {
+  const { productoId, numeroLote, cantidad, fechaCaducidad } = req.body;
+
+  if (!productoId || !cantidad || !fechaCaducidad) {
+    throw new AppError(400, 'productoId, cantidad y fechaCaducidad son requeridos');
+  }
+
+  const prodIdNum = parseInt(String(productoId), 10);
+  const producto  = await prisma.almacenProducto.findUnique({ where: { id: prodIdNum } });
+  if (!producto) throw new AppError(404, 'Producto no encontrado');
+
+  const fechaDate = new Date(fechaCaducidad);
+  if (isNaN(fechaDate.getTime())) throw new AppError(400, 'Fecha de caducidad inválida');
+
+  const lote = await prisma.almacenLote.create({
+    data: {
+      productoId:    prodIdNum,
+      numeroLote:    numeroLote ?? `LOTE-${Date.now()}`,
+      cantidad:      parseInt(String(cantidad), 10),
+      fechaCaducidad: fechaDate,
+    },
+    include: {
+      producto: { select: { id: true, codigo: true, nombre: true } },
+    },
+  });
+
+  res.status(201).json({ success: true, data: lote });
+};
+
+// ============================================================
+// REQUISICIONES DE ALMACÉN
+// ============================================================
+
+export const createRequisicion = async (req: Request, res: Response) => {
+  const usuarioId = req.usuario!.id;
+  const { areaSolicitante, justificacion, descripcion, detalles } = req.body;
+
+  if (!areaSolicitante) throw new AppError(400, 'areaSolicitante es requerido');
+  if (!justificacion)   throw new AppError(400, 'justificacion es requerida');
+  if (!Array.isArray(detalles) || detalles.length === 0) {
+    throw new AppError(400, 'Debe incluir al menos un detalle');
+  }
+
+  // Validar que todos los productos existan
+  for (const d of detalles) {
+    const prodIdNum = parseInt(String(d.productoId), 10);
+    if (!prodIdNum || isNaN(prodIdNum) || prodIdNum <= 0) {
+      throw new AppError(400, `productoId inválido en detalles`);
+    }
+    const prod = await prisma.almacenProducto.findUnique({ where: { id: prodIdNum } });
+    if (!prod) throw new AppError(404, `Producto ${prodIdNum} no encontrado`);
+  }
+
+  // Generar folio
+  const año     = new Date().getFullYear();
+  const ultimo  = await prisma.requisicion.findFirst({
+    where:   { folio: { startsWith: `REQ-${año}-` } },
+    orderBy: { id: 'desc' },
+    select:  { folio: true },
+  });
+  let num = 1;
+  if (ultimo) {
+    const partes = ultimo.folio.split('-');
+    num = parseInt(partes[2], 10) + 1;
+  }
+  const folio = `REQ-${año}-${String(num).padStart(5, '0')}`;
+
+  const requisicion = await prisma.$transaction(async (tx) => {
+    const nueva = await tx.requisicion.create({
+      data: {
+        folio,
+        usuarioSolicitaId: usuarioId,
+        areaSolicitante,
+        justificacion,
+        descripcion:       descripcion ?? null,
+        estado:            'CREADA',
+        detalles: {
+          create: detalles.map((d: any) => ({
+            productoId:        parseInt(String(d.productoId), 10),
+            cantidadSolicitada: parseInt(String(d.cantidadSolicitada), 10),
+            observaciones:      d.observaciones ?? null,
+          })),
+        },
+      },
+      include: {
+        detalles: {
+          include: { producto: { select: { id: true, codigo: true, nombre: true, unidad: true } } },
+        },
+      },
+    });
+
+    await tx.requisicionHistorial.create({
+      data: { requisicionId: nueva.id, usuarioId, estado: 'CREADA', comentario: 'Requisición creada' },
+    });
+
+    return nueva;
+  });
+
+  await crearNotificacion({
+    titulo: 'Nueva Requisición',
+    mensaje: `Requisición ${folio} del área ${areaSolicitante} pendiente de revisión.`,
+    tipo: 'INFO',
+    rol: 'ALMACEN',
+    link: '/almacen/requisiciones',
+  });
+
+  res.status(201).json({ success: true, data: requisicion });
+};
+
+export const getRequisiciones = async (req: Request, res: Response) => {
+  const { estado, areaSolicitante } = req.query;
+
+  const where: any = {};
+  if (estado)          where.estado          = estado;
+  if (areaSolicitante) where.areaSolicitante = { contains: areaSolicitante as string, mode: 'insensitive' };
+
+  const requisiciones = await prisma.requisicion.findMany({
+    where,
+    include: {
+      usuarioSolicita: { select: { id: true, nombre: true, apellidos: true } },
+      detalles: {
+        include: { producto: { select: { id: true, codigo: true, nombre: true, unidad: true } } },
+      },
+      historial: { orderBy: { fecha: 'desc' }, take: 1 },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.json({ success: true, data: requisiciones });
+};
+
+export const getRequisicionById = async (req: Request, res: Response) => {
+  const id = parseInt(req.params.id as string, 10);
+
+  const requisicion = await prisma.requisicion.findUnique({
+    where: { id },
+    include: {
+      usuarioSolicita:              { select: { id: true, nombre: true, apellidos: true } },
+      revisadoAlmacenPor:           { select: { id: true, nombre: true, apellidos: true } },
+      autorizadoPor:                { select: { id: true, nombre: true, apellidos: true } },
+      revisadoAdministracionPor:    { select: { id: true, nombre: true, apellidos: true } },
+      detalles: {
+        include: { producto: { select: { id: true, codigo: true, nombre: true, unidad: true, stockActual: true } } },
+      },
+      historial: { include: { usuario: { select: { nombre: true, apellidos: true } } }, orderBy: { fecha: 'desc' } },
+      compraRequisicion: true,
+    },
+  });
+
+  if (!requisicion) throw new AppError(404, 'Requisición no encontrada');
+
+  res.json({ success: true, data: requisicion });
+};
+
+export const revisarRequisicion = async (req: Request, res: Response) => {
+  const usuarioId = req.usuario!.id;
+  const id        = parseInt(req.params.id as string, 10);
+  const { observaciones, tipoCompra } = req.body;
+
+  const requisicion = await prisma.requisicion.findUnique({
+    where: { id },
+    include: {
+      detalles: { include: { producto: true } },
+    },
+  });
+
+  if (!requisicion) throw new AppError(404, 'Requisición no encontrada');
+
+  if (requisicion.estado !== 'CREADA' && requisicion.estado !== 'EN_REVISION_ALMACEN') {
+    throw new AppError(400, `No se puede revisar en estado ${requisicion.estado}`);
+  }
+
+  // Determinar estado según existencias
+  let itemsConStock  = 0;
+  let itemsSinStock  = 0;
+
+  for (const detalle of requisicion.detalles) {
+    if (detalle.producto && detalle.producto.stockActual >= detalle.cantidadSolicitada) {
+      itemsConStock++;
+    } else {
+      itemsSinStock++;
+    }
+  }
+
+  let nuevoEstado: string;
+  if (itemsSinStock === 0) {
+    nuevoEstado = 'SURTIDA';
+  } else if (itemsConStock > 0) {
+    nuevoEstado = 'PARCIAL';
+  } else {
+    nuevoEstado = 'SIN_EXISTENCIA';
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.requisicion.update({
+      where: { id },
+      data: {
+        estado:                  nuevoEstado as any,
+        revisadoAlmacenPorId:    usuarioId,
+        fechaRevisionAlmacen:    new Date(),
+        tieneExistencia:         nuevoEstado === 'SURTIDA',
+        observaciones:           observaciones ?? null,
+      },
+    });
+
+    await tx.requisicionHistorial.create({
+      data: {
+        requisicionId: id,
+        usuarioId,
+        estado:        nuevoEstado as any,
+        comentario:    observaciones ?? `Revisado: ${nuevoEstado}`,
+      },
+    });
+
+    // Si no hay existencia o es parcial, crear compra automáticamente
+    if (nuevoEstado === 'SIN_EXISTENCIA' || nuevoEstado === 'PARCIAL') {
+      const existeCompra = await tx.compraRequisicion.findUnique({
+        where: { requisicionId: id },
+      });
+
+      if (!existeCompra) {
+        const año    = new Date().getFullYear();
+        const ultimo = await tx.compraRequisicion.findFirst({
+          where:   { folio: { startsWith: `COM-${año}-` } },
+          orderBy: { id: 'desc' },
+          select:  { folio: true },
+        });
+        let num = 1;
+        if (ultimo) {
+          const partes = ultimo.folio.split('-');
+          num = parseInt(partes[2], 10) + 1;
+        }
+        const folioCompra  = `COM-${año}-${String(num).padStart(5, '0')}`;
+        const esCompraMayor = false;
+
+        const nuevaCompra = await tx.compraRequisicion.create({
+          data: {
+            folio:                       folioCompra,
+            requisicionId:               id,
+            usuarioId,
+            tipo:                        (tipoCompra as any) ?? 'ORDINARIA',
+            estado:                      'EN_COMPRAS',
+            esCompraMayor,
+            numeroCotizacionesRequeridas: esCompraMayor ? 3 : 1,
+            detalles: {
+              create: requisicion.detalles
+                .filter((d) => d.productoId !== null && d.producto !== null && d.producto.stockActual < d.cantidadSolicitada)
+                .map((d, i) => ({
+                  numero:     i + 1,
+                  productoId: d.productoId!,
+                  unidad:     d.producto!.unidad,
+                  cantidad:   d.cantidadSolicitada - d.producto!.stockActual,
+                })),
+            },
+          },
+        });
+
+        await tx.compraHistorial.create({
+          data: {
+            requisicionId: nuevaCompra.id,
+            estado:        'EN_COMPRAS',
+            usuarioId,
+            comentario:    `Compra creada automáticamente por revisión de requisición ${requisicion.folio}`,
+          },
+        });
+      }
+    }
+  });
+
+  if (nuevoEstado === 'SIN_EXISTENCIA' || nuevoEstado === 'PARCIAL') {
+    await crearNotificacion({
+      titulo: 'Nueva Compra Automática',
+      mensaje: `Se generó compra automática por requisición ${requisicion.folio} (${nuevoEstado}).`,
+      tipo: 'ALERTA',
+      rol: 'ALMACEN',
+      link: '/compras',
+    });
+  }
+
+  res.json({
+    success: true,
+    message: `Requisición revisada: ${nuevoEstado}`,
+    data: { estado: nuevoEstado, itemsConStock, itemsSinStock },
+  });
+};
+
+// ============================================================
+// DASHBOARD ALMACÉN
+// ============================================================
+
+export const dashboardAlmacen = async (_req: Request, res: Response) => {
+  const hoy    = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const en30   = new Date(hoy);
+  en30.setDate(en30.getDate() + 30);
+
+  const [
+    totalProductos,
+    criticos,
+    bajos,
+    proximosVencer,
+    entradas,
+    salidas,
+    requisicionesPendientes,
+  ] = await Promise.all([
+    prisma.almacenProducto.count(),
+    prisma.almacenProducto.count({ where: { estadoStock: 'CRITICO' } }),
+    prisma.almacenProducto.count({ where: { estadoStock: 'BAJO' } }),
+    prisma.almacenLote.count({ where: { fechaCaducidad: { gte: hoy, lte: en30 } } }),
+    prisma.almacenMovimiento.count({
+      where: { tipo: 'ENTRADA', createdAt: { gte: new Date(hoy.getFullYear(), hoy.getMonth(), 1) } },
+    }),
+    prisma.almacenMovimiento.count({
+      where: { tipo: 'SALIDA', createdAt: { gte: new Date(hoy.getFullYear(), hoy.getMonth(), 1) } },
+    }),
+    prisma.requisicion.count({ where: { estado: { in: ['CREADA', 'EN_REVISION_ALMACEN'] } } }),
+  ]);
+
+  const productosCriticos = await prisma.almacenProducto.findMany({
+    where:   { estadoStock: 'CRITICO' },
+    orderBy: { stockActual: 'asc' },
+    take:    10,
+  });
+
+  const movimientosRecientes = await prisma.almacenMovimiento.findMany({
+    include: {
+      producto: { select: { id: true, codigo: true, nombre: true } },
+      usuario:  { select: { nombre: true, apellidos: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take:    10,
+  });
+
+  res.json({
+    success: true,
+    data: {
+      resumen: {
+        totalProductos,
+        criticos,
+        bajos,
+        proximosVencer,
+        entradas,
+        salidas,
+        requisicionesPendientes,
+      },
+      productosCriticos,
+      movimientosRecientes,
+    },
   });
 };

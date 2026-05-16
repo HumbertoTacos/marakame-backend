@@ -7,7 +7,15 @@ import { AppError } from '../middlewares/errorHandler';
 import { crearNotificacion, apagarNotificacionesPorLink } from '../utils/notificaciones';
 
 // ============================================================
-// Helper: genera el PDF de la pre-nómina y devuelve la URL pública
+// Helpers compartidos de formato
+// ============================================================
+const fmtMoneyMX = (n: number) =>
+  new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
+const fmtFechaMX = (d: Date) =>
+  new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' });
+
+// ============================================================
+// PDF de la PRE-NÓMINA — tabla consolidada con totales preliminares
 // ============================================================
 const generarPDFPreNomina = async (nominaId: number): Promise<string> => {
   const nomina = await prisma.nomina.findUnique({
@@ -21,11 +29,6 @@ const generarPDFPreNomina = async (nominaId: number): Promise<string> => {
   const filename = `PRENOM_${nomina.folio.replace(/[^A-Za-z0-9-]/g, '_')}_${Date.now()}.pdf`;
   const filepath = path.join(dir, filename);
 
-  const fmtMoney = (n: number) =>
-    new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(n || 0);
-  const fmtFecha = (d: Date) =>
-    new Date(d).toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' });
-
   await new Promise<void>((resolve, reject) => {
     const doc = new PDFDocument({ margin: 36, size: 'LETTER', layout: 'landscape' });
     const stream = fs.createWriteStream(filepath);
@@ -33,13 +36,11 @@ const generarPDFPreNomina = async (nominaId: number): Promise<string> => {
     stream.on('error', reject);
     doc.pipe(stream);
 
-    // Encabezado institucional
     doc.fontSize(16).font('Helvetica-Bold').text('Centro de Rehabilitación Marakame', { align: 'center' });
     doc.moveDown(0.3);
     doc.fontSize(13).font('Helvetica').text('Pre-Nómina Quincenal', { align: 'center' });
     doc.moveDown(0.6);
 
-    // Bloque de metadatos en dos columnas
     const metaY = doc.y;
     doc.fontSize(9).font('Helvetica-Bold').text('Folio:', 40, metaY);
     doc.font('Helvetica').text(nomina.folio, 90, metaY);
@@ -50,9 +51,9 @@ const generarPDFPreNomina = async (nominaId: number): Promise<string> => {
 
     const metaY2 = metaY + 14;
     doc.font('Helvetica-Bold').text('Inicio:', 40, metaY2);
-    doc.font('Helvetica').text(fmtFecha(nomina.fechaInicio), 90, metaY2);
+    doc.font('Helvetica').text(fmtFechaMX(nomina.fechaInicio), 90, metaY2);
     doc.font('Helvetica-Bold').text('Fin:', 250, metaY2);
-    doc.font('Helvetica').text(fmtFecha(nomina.fechaFin), 300, metaY2);
+    doc.font('Helvetica').text(fmtFechaMX(nomina.fechaFin), 300, metaY2);
     doc.font('Helvetica-Bold').text('Emisión:', 560, metaY2);
     doc.font('Helvetica').text(new Date().toLocaleString('es-MX'), 615, metaY2);
 
@@ -60,17 +61,16 @@ const generarPDFPreNomina = async (nominaId: number): Promise<string> => {
     doc.moveTo(40, doc.y).lineTo(760, doc.y).strokeColor('#cbd5e1').stroke();
     doc.moveDown(0.4);
 
-    // Columnas (anchos calibrados para LETTER landscape, margen 36)
     const cols = [
-      { key: 'empleado',     label: 'Empleado',         x: 40,  w: 170, align: 'left'  as const },
-      { key: 'depto',        label: 'Depto.',           x: 210, w: 70,  align: 'left'  as const },
-      { key: 'puesto',       label: 'Puesto',           x: 280, w: 120, align: 'left'  as const },
-      { key: 'dias',         label: 'Días',             x: 400, w: 30,  align: 'right' as const },
-      { key: 'sueldo',       label: 'Sueldo',           x: 430, w: 65,  align: 'right' as const },
-      { key: 'comp',         label: 'Compens.',         x: 495, w: 65,  align: 'right' as const },
-      { key: 'percep',       label: 'Percepciones',     x: 560, w: 70,  align: 'right' as const },
-      { key: 'isr',          label: 'ISR',              x: 630, w: 55,  align: 'right' as const },
-      { key: 'neto',         label: 'A Pagar',          x: 685, w: 75,  align: 'right' as const },
+      { label: 'Empleado',     x: 40,  w: 170, align: 'left'  as const },
+      { label: 'Depto.',       x: 210, w: 70,  align: 'left'  as const },
+      { label: 'Puesto',       x: 280, w: 120, align: 'left'  as const },
+      { label: 'Días',         x: 400, w: 30,  align: 'right' as const },
+      { label: 'Sueldo',       x: 430, w: 65,  align: 'right' as const },
+      { label: 'Compens.',     x: 495, w: 65,  align: 'right' as const },
+      { label: 'Percepciones', x: 560, w: 70,  align: 'right' as const },
+      { label: 'ISR',          x: 630, w: 55,  align: 'right' as const },
+      { label: 'A Pagar',      x: 685, w: 75,  align: 'right' as const },
     ];
 
     const drawHeader = () => {
@@ -83,12 +83,9 @@ const generarPDFPreNomina = async (nominaId: number): Promise<string> => {
     };
 
     drawHeader();
-
     let acumPercep = 0, acumIsr = 0, acumNeto = 0, acumComp = 0, acumSueldo = 0;
-
     doc.font('Helvetica').fontSize(8);
     for (const pn of nomina.prenominas) {
-      // Salto de página si nos pasamos del área útil.
       if (doc.y > 540) {
         doc.addPage({ margin: 36, size: 'LETTER', layout: 'landscape' });
         drawHeader();
@@ -99,11 +96,11 @@ const generarPDFPreNomina = async (nominaId: number): Promise<string> => {
       doc.text(pn.empleado.departamento || '',                    210, y, { width: 70,  align: 'left' });
       doc.text(pn.empleado.puesto || '',                          280, y, { width: 120, align: 'left' });
       doc.text(String(pn.diasTrabajados),                         400, y, { width: 30,  align: 'right' });
-      doc.text(fmtMoney(pn.sueldoBruto),                          430, y, { width: 65,  align: 'right' });
-      doc.text(fmtMoney(pn.compensacion),                         495, y, { width: 65,  align: 'right' });
-      doc.text(fmtMoney(pn.totalPercepciones),                    560, y, { width: 70,  align: 'right' });
-      doc.text(fmtMoney(pn.retencionISR),                         630, y, { width: 55,  align: 'right' });
-      doc.text(fmtMoney(pn.totalAPagar),                          685, y, { width: 75,  align: 'right' });
+      doc.text(fmtMoneyMX(pn.sueldoBruto),                        430, y, { width: 65,  align: 'right' });
+      doc.text(fmtMoneyMX(pn.compensacion),                       495, y, { width: 65,  align: 'right' });
+      doc.text(fmtMoneyMX(pn.totalPercepciones),                  560, y, { width: 70,  align: 'right' });
+      doc.text(fmtMoneyMX(pn.retencionISR),                       630, y, { width: 55,  align: 'right' });
+      doc.text(fmtMoneyMX(pn.totalAPagar),                        685, y, { width: 75,  align: 'right' });
       doc.moveDown(0.9);
 
       acumSueldo += pn.sueldoBruto;
@@ -113,21 +110,19 @@ const generarPDFPreNomina = async (nominaId: number): Promise<string> => {
       acumNeto   += pn.totalAPagar;
     }
 
-    // Fila de totales
     doc.moveDown(0.3);
     doc.moveTo(40, doc.y).lineTo(760, doc.y).strokeColor('#0f172a').stroke();
     doc.moveDown(0.3);
     const yTot = doc.y;
     doc.font('Helvetica-Bold').fontSize(9);
-    doc.text('TOTAL',               40,  yTot, { width: 360, align: 'left'  });
-    doc.text(fmtMoney(acumSueldo),  430, yTot, { width: 65,  align: 'right' });
-    doc.text(fmtMoney(acumComp),    495, yTot, { width: 65,  align: 'right' });
-    doc.text(fmtMoney(acumPercep),  560, yTot, { width: 70,  align: 'right' });
-    doc.text(fmtMoney(acumIsr),     630, yTot, { width: 55,  align: 'right' });
-    doc.text(fmtMoney(acumNeto),    685, yTot, { width: 75,  align: 'right' });
+    doc.text('TOTAL',                40,  yTot, { width: 360, align: 'left'  });
+    doc.text(fmtMoneyMX(acumSueldo), 430, yTot, { width: 65,  align: 'right' });
+    doc.text(fmtMoneyMX(acumComp),   495, yTot, { width: 65,  align: 'right' });
+    doc.text(fmtMoneyMX(acumPercep), 560, yTot, { width: 70,  align: 'right' });
+    doc.text(fmtMoneyMX(acumIsr),    630, yTot, { width: 55,  align: 'right' });
+    doc.text(fmtMoneyMX(acumNeto),   685, yTot, { width: 75,  align: 'right' });
     doc.moveDown(2);
 
-    // Bloque de firmas (4 cajitas)
     const firmasY = doc.y + 10;
     const cajaW = 170;
     const firmas = ['Recursos Financieros', 'Administración', 'Dirección General', 'Recursos Humanos'];
@@ -136,6 +131,141 @@ const generarPDFPreNomina = async (nominaId: number): Promise<string> => {
       doc.moveTo(x, firmasY + 30).lineTo(x + cajaW, firmasY + 30).strokeColor('#94a3b8').stroke();
       doc.fontSize(8).fillColor('#475569').font('Helvetica').text(nombre, x, firmasY + 34, { width: cajaW, align: 'center' });
     });
+
+    doc.end();
+  });
+
+  return `/uploads/nominas/${filename}`;
+};
+
+// ============================================================
+// PDF de la NÓMINA FINAL — un recibo por empleado con firma del trabajador
+// Se genera tras `cerrarNomina`, ya con descuentos por faltas aplicados.
+// ============================================================
+const generarPDFNominaFinal = async (nominaId: number): Promise<string> => {
+  const nomina = await prisma.nomina.findUnique({
+    where: { id: nominaId },
+    include: { prenominas: { include: { empleado: true } } },
+  });
+  if (!nomina) throw new Error('Nómina no encontrada para generar PDF final.');
+
+  const dir = path.join('uploads', 'nominas');
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  const filename = `NOMFINAL_${nomina.folio.replace(/[^A-Za-z0-9-]/g, '_')}_${Date.now()}.pdf`;
+  const filepath = path.join(dir, filename);
+
+  await new Promise<void>((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 48, size: 'LETTER' });
+    const stream = fs.createWriteStream(filepath);
+    stream.on('finish', () => resolve());
+    stream.on('error', reject);
+    doc.pipe(stream);
+
+    const regimenLabel = nomina.regimen === 'LISTA_RAYA' ? 'Lista de Raya' : 'Confianza';
+
+    // Página de portada con totales generales
+    doc.fontSize(18).font('Helvetica-Bold').text('Centro de Rehabilitación Marakame', { align: 'center' });
+    doc.moveDown(0.3);
+    doc.fontSize(14).font('Helvetica').text('Nómina Quincenal — Recibos Finales', { align: 'center' });
+    doc.moveDown(0.4);
+    doc.fontSize(10).text(`Folio: ${nomina.folio} · Periodo: ${nomina.periodo}`, { align: 'center' });
+    doc.text(`Régimen: ${regimenLabel} · Emisión: ${new Date().toLocaleString('es-MX')}`, { align: 'center' });
+    doc.moveDown(1);
+
+    const totalPercep = nomina.prenominas.reduce((s, p) => s + p.totalPercepciones, 0);
+    const totalDed    = nomina.prenominas.reduce((s, p) => s + p.totalDeducciones,  0);
+    const totalNeto   = nomina.prenominas.reduce((s, p) => s + p.totalAPagar,       0);
+
+    doc.fontSize(11).font('Helvetica-Bold').text('Totales del ciclo', { underline: false });
+    doc.moveDown(0.3);
+    doc.fontSize(10).font('Helvetica');
+    doc.text(`Empleados: ${nomina.prenominas.length}`);
+    doc.text(`Total Percepciones: ${fmtMoneyMX(totalPercep)}`);
+    doc.text(`Total Deducciones:  ${fmtMoneyMX(totalDed)}`);
+    doc.font('Helvetica-Bold').text(`Total Neto a Pagar:  ${fmtMoneyMX(totalNeto)}`);
+    doc.moveDown(1);
+    doc.fontSize(9).fillColor('#475569').font('Helvetica')
+       .text('Imprime, recoge la firma del trabajador en cada recibo y entrega el documento a Finanzas para archivar el ciclo.',
+             { align: 'left' });
+    doc.fillColor('#000');
+
+    // Un recibo por empleado en su propia página
+    for (const pn of nomina.prenominas) {
+      doc.addPage();
+
+      doc.fontSize(13).font('Helvetica-Bold').text('Recibo de Nómina Quincenal', { align: 'center' });
+      doc.moveDown(0.2);
+      doc.fontSize(9).font('Helvetica').fillColor('#64748b')
+         .text(`${nomina.folio} · ${nomina.periodo}`, { align: 'center' });
+      doc.fillColor('#000');
+      doc.moveDown(0.8);
+
+      // Datos del empleado
+      const headY = doc.y;
+      doc.fontSize(10).font('Helvetica-Bold').text('Empleado:', 48, headY);
+      doc.font('Helvetica').text(`${pn.empleado.nombre} ${pn.empleado.apellidos}`, 110, headY);
+      doc.font('Helvetica-Bold').text('Régimen:', 360, headY);
+      doc.font('Helvetica').text(pn.empleado.regimen === 'LISTA_RAYA' ? 'Lista de Raya' : 'Confianza', 420, headY);
+
+      const headY2 = headY + 14;
+      doc.font('Helvetica-Bold').text('Puesto:', 48, headY2);
+      doc.font('Helvetica').text(pn.empleado.puesto || '—', 110, headY2);
+      doc.font('Helvetica-Bold').text('Depto.:', 360, headY2);
+      doc.font('Helvetica').text(pn.empleado.departamento || '—', 420, headY2);
+
+      doc.moveDown(2.2);
+      doc.moveTo(48, doc.y).lineTo(564, doc.y).strokeColor('#cbd5e1').stroke();
+      doc.moveDown(0.4);
+
+      // Detalle de cálculo
+      const filaY = (etiqueta: string, valor: string, bold = false) => {
+        const y = doc.y;
+        doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(10);
+        doc.text(etiqueta, 48, y, { width: 350, align: 'left' });
+        doc.text(valor,    400, y, { width: 164, align: 'right' });
+        doc.moveDown(0.7);
+      };
+
+      doc.fontSize(10).font('Helvetica-Bold').fillColor('#0f172a').text('Percepciones', 48);
+      doc.fillColor('#000');
+      doc.moveDown(0.3);
+      filaY('Sueldo bruto (15 días)',           fmtMoneyMX(pn.sueldoBruto));
+      filaY('Compensación fija',                fmtMoneyMX(pn.compensacion));
+      filaY('Total percepciones',               fmtMoneyMX(pn.totalPercepciones), true);
+
+      doc.moveDown(0.4);
+      doc.fontSize(10).font('Helvetica-Bold').fillColor('#0f172a').text('Deducciones', 48);
+      doc.fillColor('#000');
+      doc.moveDown(0.3);
+      filaY('Retención ISR',                    fmtMoneyMX(pn.retencionISR));
+      filaY('Descuento por faltas',             fmtMoneyMX(pn.descuentoIncidencias));
+      if (pn.incidencias) {
+        doc.fontSize(8).fillColor('#64748b').font('Helvetica').text(pn.incidencias, 60, doc.y, { width: 504 });
+        doc.fillColor('#000');
+        doc.moveDown(0.4);
+      }
+      filaY('Total deducciones',                fmtMoneyMX(pn.totalDeducciones), true);
+
+      doc.moveDown(0.5);
+      doc.moveTo(48, doc.y).lineTo(564, doc.y).strokeColor('#0f172a').stroke();
+      doc.moveDown(0.4);
+      doc.font('Helvetica-Bold').fontSize(12);
+      const yNeto = doc.y;
+      doc.text('NETO A RECIBIR', 48, yNeto, { width: 350, align: 'left' });
+      doc.text(fmtMoneyMX(pn.totalAPagar), 400, yNeto, { width: 164, align: 'right' });
+      doc.moveDown(0.6);
+      doc.fontSize(9).fillColor('#64748b').font('Helvetica')
+         .text(`Días efectivamente trabajados: ${pn.diasTrabajados} / 15`, 48);
+      doc.fillColor('#000');
+
+      // Bloque de firma del trabajador (al pie)
+      const firmaY = 660;
+      doc.moveTo(120, firmaY).lineTo(440, firmaY).strokeColor('#0f172a').stroke();
+      doc.font('Helvetica').fontSize(10).fillColor('#475569')
+         .text('Firma del trabajador (recibo conforme)', 48, firmaY + 6, { width: 516, align: 'center' });
+      doc.text(`${pn.empleado.nombre} ${pn.empleado.apellidos}`, 48, firmaY + 22, { width: 516, align: 'center' });
+      doc.fillColor('#000');
+    }
 
     doc.end();
   });
@@ -332,8 +462,7 @@ export const generarNomina = async (req: Request, res: Response) => {
   }
 };
 
-export const getNominas = async (req: Request, res: Response) => {
-  // CORRECCIÓN: Quitamos el filtro 'not: AUTORIZADO'. Ahora manda TODO a React.
+export const getNominas = async (_req: Request, res: Response) => {
   const nominas = await prisma.nomina.findMany({
     include: {
       usuarioAutoriza: { select: { nombre: true, apellidos: true } },
@@ -341,6 +470,42 @@ export const getNominas = async (req: Request, res: Response) => {
     },
     orderBy: { createdAt: 'desc' }
   });
+
+  // Enriquecemos cada nómina ACTIVA (no PAGADO) con un cálculo en vivo:
+  //   - faltasNoJustificadas: # de FALTAs del empleado en el periodo cuyo justificante no fue aprobado
+  //   - totalAPagarFinal:    totalPercepciones - ISR - (salarioBase/15 × faltasNoJustificadas)
+  // Esto permite a RH ver el efecto real de aprobar/rechazar justificantes sin esperar a cerrar.
+  for (const nomina of nominas) {
+    if (nomina.estado === 'PAGADO' || nomina.prenominas.length === 0) continue;
+
+    const desde = new Date(nomina.fechaInicio); desde.setUTCHours(0, 0, 0, 0);
+    const hasta = new Date(nomina.fechaFin);    hasta.setUTCHours(23, 59, 59, 999);
+    const empleadoIds = nomina.prenominas.map(p => p.empleadoId);
+
+    const faltas = await prisma.registroAsistencia.findMany({
+      where: {
+        empleadoId: { in: empleadoIds },
+        fecha: { gte: desde, lte: hasta },
+        tipo: 'FALTA' as any,
+        NOT: { estadoJustificacion: 'APROBADA' as any },
+      },
+      select: { empleadoId: true },
+    });
+    const faltasPorEmp: Record<number, number> = {};
+    for (const f of faltas) faltasPorEmp[f.empleadoId] = (faltasPorEmp[f.empleadoId] || 0) + 1;
+
+    for (const pn of nomina.prenominas) {
+      const faltasEmp = faltasPorEmp[pn.empleadoId] || 0;
+      const tarifaDia = (Number(pn.empleado.salarioBase) || 0) / 15;
+      const descuento = +(tarifaDia * faltasEmp).toFixed(2);
+      const totalDedFinal = +(pn.retencionISR + descuento + (pn.otrasDeducciones || 0)).toFixed(2);
+      const totalAPagarFinal = +(pn.totalPercepciones - totalDedFinal).toFixed(2);
+      (pn as any).faltasNoJustificadas = faltasEmp;
+      (pn as any).descuentoCalculado   = descuento;
+      (pn as any).totalAPagarFinal     = totalAPagarFinal;
+    }
+  }
+
   res.json({ success: true, data: nominas });
 };
 
@@ -721,15 +886,12 @@ export const guardarAsistencias = async (req: Request, res: Response) => {
       }
     });
 
-    // 3. Preparar los datos (incluyendo URL del documento si subieron archivo).
-    // Regla del estadoJustificacion:
-    //   - ASISTENCIA → NO_APLICA (no hay incidencia que justificar)
-    //   - FALTA + el jefe dijo que SÍ tiene justificante → PENDIENTE (admin debe revisar)
-    //   - FALTA + el jefe dijo que NO tiene justificante → RECHAZADA (es falta directa, sin nada que revisar)
+    // 3. Preparar los datos. Toda FALTA arranca en PENDIENTE para que RRHH decida día por día
+    // si la justifica o no (con el motivo/archivo quincenal que haya subido el jefe).
     const datosAInsertar = registros.map((reg: any) => {
       let estadoJustificacion: 'NO_APLICA' | 'PENDIENTE' | 'RECHAZADA' = 'NO_APLICA';
       if (reg.tipo !== 'ASISTENCIA') {
-        estadoJustificacion = reg.quiereJustificar === true ? 'PENDIENTE' : 'RECHAZADA';
+        estadoJustificacion = 'PENDIENTE';
       }
       // Omitimos `nominaId` cuando no hay nómina abierta (la columna es opcional en BD).
       const base: any = {
@@ -936,6 +1098,19 @@ export const cerrarNomina = async (req: Request, res: Response) => {
         totalGeneral:      +acumNeto.toFixed(2),
       },
     });
+
+    // Genera el PDF final (un recibo por empleado con espacio para firma del trabajador).
+    try {
+      const archivoNominaFinalUrl = await generarPDFNominaFinal(actualizada.id);
+      await prisma.nomina.update({
+        where: { id: actualizada.id },
+        data: { archivoNominaFinalUrl }
+      });
+      (actualizada as any).archivoNominaFinalUrl = archivoNominaFinalUrl;
+    } catch (pdfErr: any) {
+      console.error('No se pudo generar el PDF final:', pdfErr?.message);
+      // No bloqueamos el cierre si el PDF falla; queda registrado y se puede regenerar.
+    }
 
     // Apaga las notificaciones del paso (RH cerró la nómina).
     const link4 = `/nominas/${actualizada.id}`;
