@@ -59,10 +59,11 @@ export const createRequisicion = async (req: Request, res: Response) => {
 };
 
 export const getRequisiciones = async (req: Request, res: Response) => {
-  const { estado, q, page = '1', limit = '50' } = req.query;
+  const { estado, q, tipo, page = '1', limit = '50' } = req.query;
 
   const where: Record<string, unknown> = {};
   if (estado) where.estado = estado;
+  if (tipo) where.tipo = tipo;
   if (q) {
     where.OR = [
       { folio: { contains: q as string, mode: 'insensitive' } },
@@ -85,6 +86,14 @@ export const getRequisiciones = async (req: Request, res: Response) => {
       include: {
         usuarioSolicita: { select: { id: true, nombre: true, apellidos: true } },
         detalles: true,
+        compraRequisicion: {
+          include: {
+            cotizaciones: {
+              include: { proveedor: { select: { id: true, nombre: true } } },
+              orderBy: { createdAt: 'asc' as const },
+            },
+          },
+        },
       },
     }),
   ]);
@@ -108,6 +117,14 @@ export const getRequisicionById = async (req: Request, res: Response) => {
       historial: {
         orderBy: { id: 'desc' },
         include: { usuario: { select: { nombre: true, apellidos: true } } },
+      },
+      compraRequisicion: {
+        include: {
+          cotizaciones: {
+            include: { proveedor: { select: { id: true, nombre: true } } },
+            orderBy: { createdAt: 'asc' as const },
+          },
+        },
       },
     },
   });
