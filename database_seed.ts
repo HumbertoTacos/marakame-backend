@@ -1,15 +1,16 @@
-import { 
-  PrismaClient, 
-  EstadoCama, 
-  AreaCentro, 
-  Rol, 
-  EstadoPaciente, 
-  TipoAcuerdoSeguimiento, 
+import {
+  PrismaClient,
+  EstadoCama,
+  AreaCentro,
+  Rol,
+  EstadoPaciente,
+  TipoAcuerdoSeguimiento,
   EstadoNomina,
-  RegimenLaboral,     
-  TipoIncidencia      
+  RegimenLaboral,
+  TipoIncidencia
 } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { syncCamas } from './src/scripts/syncCamas';
 
 const prisma = new PrismaClient();
 
@@ -57,34 +58,9 @@ async function main() {
   const enfermero = await prisma.usuario.findUnique({ where: { correo: 'enfermeria@marakame.com' } });
   const admisionista = await prisma.usuario.findUnique({ where: { correo: 'admisiones@marakame.com' } });
 
-  // 2. CATÁLOGO DE CAMAS
-  console.log('🛏️ Inicializando catálogo de habitaciones y camas...');
-  const areas: AreaCentro[] = [AreaCentro.HOMBRES, AreaCentro.MUJERES, AreaCentro.DETOX];
-  for (const area of areas) {
-    const habitacion = await prisma.habitacion.upsert({
-      where: { nombre: `Habitación ${area}` },
-      update: { area },
-      create: { 
-        nombre: `Habitación ${area}`, 
-        capacidadMax: 10, 
-        area 
-      },
-    });
-
-    for (let i = 1; i <= 5; i++) {
-      const numero = `${area.charAt(0)}-${i.toString().padStart(2, '0')}`;
-      await prisma.cama.upsert({
-        where: { numero },
-        update: { habitacionId: habitacion.id },
-        create: { 
-          numero,
-          codigo: numero,
-          habitacionId: habitacion.id, 
-          estado: EstadoCama.DISPONIBLE 
-        },
-      });
-    }
-  }
+  // 2. CATÁLOGO DE CAMAS — capacidad institucional declarada en src/scripts/syncCamas.ts
+  console.log('🛏️ Sincronizando habitaciones y camas (50 totales: 22H / 18M / 10D)...');
+  await syncCamas(prisma);
 
   // 2.5 CATÁLOGO DE SUSTANCIAS
   console.log('🧪 Poblado catálogo de sustancias...');
@@ -126,7 +102,7 @@ async function main() {
   if (!pInternado) {
     pInternado = await prisma.paciente.create({
       data: {
-        claveUnica: 1, 
+        claveUnica: 1,
         nombre: 'Carlos',
         apellidoPaterno: 'Jiménez',
         apellidoMaterno: 'Sosa',
@@ -136,7 +112,13 @@ async function main() {
         sustancias: ['ALCOHOL', 'TABACO'],
         direccion: 'Av. Siempre Viva 123, Tepic',
         areaDeseada: AreaCentro.HOMBRES,
+        fechaIngreso: new Date(),
       },
+    });
+  } else if (!pInternado.fechaIngreso) {
+    pInternado = await prisma.paciente.update({
+      where: { id: pInternado.id },
+      data: { fechaIngreso: new Date() },
     });
   }
 

@@ -20,11 +20,6 @@ router.get('/paciente/:pacienteId/citas', controller.getCitas);
 router.post('/citas', controller.crearCita);
 router.patch('/citas/:id', controller.actualizarCita);
 
-// ── Evaluaciones Psicométricas ───────────────────────────────
-router.get('/paciente/:pacienteId/evaluaciones', controller.getEvaluaciones);
-router.post('/paciente/:pacienteId/evaluaciones', authorize('ADMIN_GENERAL', 'AREA_MEDICA', 'PSICOLOGIA'), controller.registrarEvaluacion);
-router.patch('/evaluaciones/:id', authorize('ADMIN_GENERAL', 'AREA_MEDICA', 'PSICOLOGIA'), controller.actualizarEvaluacion);
-
 // ── Sesiones Clínicas (Psicología, Consejería, Familia, Seguimiento) ──
 router.get('/expediente/:expedienteId/sesiones/:tipo', controller.getNotasSesion);
 router.post('/expediente/:expedienteId/sesiones/:tipo', controller.crearNotaSesion);

@@ -120,7 +120,6 @@ model Usuario {
   signosTomados         SignoVital[]
   tratamientosRecetados TratamientoMedico[]
   suministrosAplicados  SuministroTratamiento[]
-  evaluacionesAplicadas EvaluacionResultado[]
   sesionesClinicas      NotaSesionClinica[]
   planesNutricionales   PlanNutricional[]
 
@@ -266,7 +265,6 @@ model Paciente {
   cargos       CargoPaciente[]
   citas        CitaAgenda[]
   ingresos     Ingreso[]
-  evaluaciones EvaluacionResultado[]
 
   @@map("pacientes")
 }
@@ -1127,22 +1125,6 @@ model Proveedor {
 // ============================================================
 // EVALUACIONES PSICOMÉTRICAS
 // ============================================================
-
-model EvaluacionResultado {
-  id              Int      @id @default(autoincrement())
-  pacienteId      Int
-  usuarioId       Int
-  instrumento     String // AUDIT, PHQ9, CAGE, ASSIST, BECK, HAMILTON, DAST, ASI
-  puntajeTotal    Float
-  interpretacion  String?  @db.Text
-  observaciones   String?  @db.Text
-  fechaAplicacion DateTime @default(now())
-
-  paciente Paciente @relation(fields: [pacienteId], references: [id])
-  usuario  Usuario  @relation(fields: [usuarioId], references: [id])
-
-  @@map("evaluaciones_resultados")
-}
 
 // ============================================================
 // AGENDA Y CITAS
